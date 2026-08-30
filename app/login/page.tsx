@@ -5,13 +5,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { login, verifyCredentials } from "@/lib/auth";
 
 const display = Space_Grotesk({ subsets: ["latin"], weight: ["500", "700"] });
 const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500", "700"] });
-
-// demo-only fake credentials — replace with real auth (NextAuth) later
-const FAKE_OPERATOR_ID = "netra-admin";
-const FAKE_ACCESS_KEY = "netra@2026";
 
 function Background() {
   return (
@@ -66,7 +63,8 @@ export default function LoginPage() {
 
     // simulated auth check — swap this for a real API/NextAuth call
     setTimeout(() => {
-      if (operatorId.trim() === FAKE_OPERATOR_ID && accessKey === FAKE_ACCESS_KEY) {
+      if (verifyCredentials(operatorId, accessKey)) {
+        login(operatorId.trim(), accessKey);
         router.push("/dashboard");
       } else {
         setError(true);

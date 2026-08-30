@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import cytoscape, { Core, NodeSingular } from "cytoscape";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { EntityTypeIcon, EntityTypeMark, entityTypeIconDataUri } from "@/components/EntityTypeIcon";
 
 type NodeType = "PERSON" | "ORGANIZATION" | "LOCATION" | "PHONE" | "BANK_ACCOUNT" | "VEHICLE" | "TRANSACTION" | "OTHER";
 type Relevance = "HIGH" | "MEDIUM" | "LOW";
@@ -28,16 +29,16 @@ interface NetworkEdge {
   evidence: string;
 }
 
-const typeIcon: Record<NodeType, string> = {
-  PERSON: "👤",
-  ORGANIZATION: "🏢",
-  LOCATION: "📍",
-  PHONE: "📞",
-  BANK_ACCOUNT: "🏦",
-  VEHICLE: "🚗",
-  TRANSACTION: "💰",
-  OTHER: "🌐",
-};
+const NODE_TYPES: NodeType[] = [
+  "PERSON",
+  "ORGANIZATION",
+  "LOCATION",
+  "PHONE",
+  "BANK_ACCOUNT",
+  "VEHICLE",
+  "TRANSACTION",
+  "OTHER",
+];
 
 const typeColor: Record<NodeType, string> = {
   PERSON: "#f87171",
@@ -49,12 +50,6 @@ const typeColor: Record<NodeType, string> = {
   TRANSACTION: "#4ade80",
   OTHER: "#a3a3a3",
 };
-
-// ── emoji icon rendered inside each node via an SVG <text> wrapper ──
-const typeIconDataUri = (t: NodeType) =>
-  `data:image/svg+xml;utf8,${encodeURIComponent(
-    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text x='12' y='17' font-size='16' text-anchor='middle'>${typeIcon[t]}</text></svg>`
-  )}`;
 
 // ── mock case graph — replace with a backend fetch (entities + relationships) later ──
 const nodes: NetworkNode[] = [
@@ -183,7 +178,10 @@ export default function CaseNetworkPage() {
             },
             "background-color": (ele: NodeSingular) => typeColor[ele.data("type") as NodeType] ?? "#f87171",
             "background-opacity": 0.18,
-            "background-image": (ele: NodeSingular) => typeIconDataUri(ele.data("type") as NodeType),
+            "background-image": (ele: NodeSingular) => {
+              const t = ele.data("type") as NodeType;
+              return entityTypeIconDataUri(t, typeColor[t] ?? "#fafafa");
+            },
             "background-fit": "contain",
             "background-width": "70%",
             "background-height": "70%",
@@ -339,7 +337,7 @@ export default function CaseNetworkPage() {
 
   return (
     <main className="min-h-screen bg-[#080808] text-neutral-200">
-      <div className="mx-auto max-w-[1600px] px-6 py-6 md:px-10">
+      <div className="mx-auto max-w-[1600px] px-6 pt-12 pb-6 md:px-10">
         {/* header */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <button
@@ -389,7 +387,7 @@ export default function CaseNetworkPage() {
                     }}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-[#161616]"
                   >
-                    <span>{typeIcon[n.type]}</span> {n.name}
+                    <EntityTypeIcon type={n.type} size={14} className="text-neutral-400" /> {n.name}
                   </button>
                 ))}
               </div>
@@ -417,7 +415,7 @@ export default function CaseNetworkPage() {
           </select>
 
           <div className="flex flex-wrap gap-1.5">
-            {(Object.keys(typeIcon) as NodeType[]).map((t) => (
+            {NODE_TYPES.map((t) => (
               <button
                 key={t}
                 onClick={() => toggleTypeFilter(t)}
@@ -425,7 +423,7 @@ export default function CaseNetworkPage() {
                   typeFilters.has(t) ? "border-red-500/40 bg-red-500/10 text-red-300" : "border-neutral-800 text-neutral-400 hover:border-neutral-600"
                 }`}
               >
-                {typeIcon[t]} {t.replace("_", " ")}
+                <EntityTypeIcon type={t} size={12} className="mr-1 inline-block align-[-2px]" /> {t.replace("_", " ")}
               </button>
             ))}
           </div>
@@ -447,9 +445,9 @@ export default function CaseNetworkPage() {
             <div className="absolute bottom-3 left-3 border border-neutral-800 bg-[#0d0d0dcc] px-3 py-2.5 backdrop-blur-sm">
               <div className="text-[9px] tracking-widest text-neutral-500 mb-1.5">LEGEND</div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                {(Object.keys(typeIcon) as NodeType[]).map((t) => (
+                {NODE_TYPES.map((t) => (
                   <div key={t} className="flex items-center gap-1.5 text-[9px] text-neutral-400">
-                    <span>{typeIcon[t]}</span> {t.replace("_", " ")}
+                    <EntityTypeIcon type={t} size={12} /> {t.replace("_", " ")}
                   </div>
                 ))}
               </div>
@@ -461,7 +459,7 @@ export default function CaseNetworkPage() {
             {selectedNode && (
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-2xl">{typeIcon[selectedNode.type]}</span>
+                  <EntityTypeMark type={selectedNode.type} />
                   <div>
                     <div className="text-base font-semibold text-white">{selectedNode.name}</div>
                     <div className="text-[9px] tracking-widest text-neutral-500">{selectedNode.type.replace("_", " ")}</div>

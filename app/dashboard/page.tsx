@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import UserSettings from "@/components/UserSettings";
 import type { Case } from "@/types/netra";
 
 export default function DashboardPage() {
@@ -189,15 +190,7 @@ export default function DashboardPage() {
               </svg>
             </button>
 
-            <div className="flex items-center gap-2.5 pl-4 border-l border-neutral-800">
-              <div className="w-[34px] h-[34px] rounded-full bg-neutral-900 border border-neutral-700 flex items-center justify-center text-xs text-neutral-300">
-                RV
-              </div>
-              <div>
-                <div className="text-[13px] font-semibold text-white">R. Verma</div>
-                <div className="text-[10px] tracking-wide text-neutral-500 mt-0.5">FIELD ANALYST</div>
-              </div>
-            </div>
+            <UserSettings />
           </div>
         </div>
 
@@ -218,16 +211,13 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-4 gap-4 mb-12">
           {[
-            { label: "Active Cases", value: cases.filter((c) => c.status === "ACTIVE").length, icon: "📁" },
-            { label: "High-Risk Cases", value: highRiskCount, icon: "⚠️" },
-            { label: "Cases Resolved", value: resolvedCount, icon: "✅" },
-            { label: "Detection Accuracy", value: "0%", icon: "📈" },
+            { label: "Active Cases", value: cases.filter((c) => c.status === "ACTIVE").length },
+            { label: "High-Risk Cases", value: highRiskCount },
+            { label: "Cases Resolved", value: resolvedCount },
+            { label: "Detection Accuracy", value: "0%" },
           ].map((s) => (
             <div key={s.label} className="border border-neutral-900 bg-[#0a0a0a] p-5 hover:border-neutral-700 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="text-xs text-neutral-500">{s.label}</div>
-                <span className="text-sm">{s.icon}</span>
-              </div>
+              <div className="text-xs text-neutral-500">{s.label}</div>
               <div className="text-[36px] font-bold text-red-500 mt-3">
                 {loading ? "—" : s.value}
               </div>

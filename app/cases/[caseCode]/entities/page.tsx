@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
+import { EntityTypeMark } from "@/components/EntityTypeIcon";
 
 type EntityType = "PERSON" | "ORGANIZATION" | "LOCATION" | "PHONE" | "VEHICLE" | "BANK_ACCOUNT" | "OTHER";
 type Relevance = "HIGH" | "MEDIUM" | "LOW";
@@ -42,16 +43,6 @@ interface Entity {
   lastDetected: string;
   verification: "VERIFIED" | "UNVERIFIED";
 }
-
-const typeIcon: Record<EntityType, string> = {
-  PERSON: "👤",
-  ORGANIZATION: "🏢",
-  LOCATION: "📍",
-  PHONE: "📞",
-  VEHICLE: "🚗",
-  BANK_ACCOUNT: "🏦",
-  OTHER: "🔎",
-};
 
 // ── sample entities for this case — replace with a Supabase fetch once entity extraction exists ──
 const sampleEntities: Entity[] = [
@@ -182,7 +173,6 @@ const relevanceColor: Record<Relevance, string> = {
 };
 
 export default function CaseEntitiesPage() {
-  const router = useRouter();
   const { caseCode } = useParams<{ caseCode: string }>();
 
   const [search, setSearch] = useState("");
@@ -206,11 +196,7 @@ export default function CaseEntitiesPage() {
     <main className="min-h-screen bg-[#080808] text-neutral-200">
       <div className="mx-auto max-w-[1500px] px-6 py-8 md:px-10">
         {/* header */}
-        <button onClick={() => router.push(`/cases/${caseCode}`)} className="text-[11px] tracking-[0.16em] text-neutral-400 hover:text-red-400">
-          ← BACK TO CASE
-        </button>
-
-        <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-white">ALL ENTITIES</h1>
             <p className="mt-2 text-xs text-neutral-500">
@@ -263,7 +249,7 @@ export default function CaseEntitiesPage() {
                   }`}
                 >
                   <div className="flex items-start gap-3">
-                    <span className="text-lg">{typeIcon[e.type]}</span>
+                    <EntityTypeMark type={e.type} />
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-semibold text-white truncate">{e.name}</div>
                       <div className="mt-1 text-[9px] tracking-widest text-neutral-500">{e.type.replace("_", " ")}</div>
@@ -287,7 +273,7 @@ export default function CaseEntitiesPage() {
               <section className="border border-neutral-800 bg-[#111] p-6">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <span className="text-3xl">{typeIcon[selected.type]}</span>
+                    <EntityTypeMark type={selected.type} size="lg" />
                     <div>
                       <h2 className="text-2xl font-bold text-white">{selected.name}</h2>
                       <div className="mt-1 text-[10px] tracking-widest text-neutral-500">{selected.type.replace("_", " ")}</div>
@@ -311,17 +297,13 @@ export default function CaseEntitiesPage() {
               </section>
 
               {/* AI insight */}
-              <section className="border border-cyan-500/20 bg-[#0d1315] p-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[11px] font-semibold tracking-[0.16em] text-cyan-300">AI INSIGHT</h3>
-                  <span className="text-[9px] tracking-wide text-neutral-500">Generated from {selected.sourceCount} sources</span>
-                </div>
+              <section id="ai-insight" className="scroll-mt-8 border border-cyan-500/20 bg-[#0d1315] p-6">
+                <h3 className="text-[11px] font-semibold tracking-[0.16em] text-cyan-300">AI INSIGHT</h3>
                 <p className="mt-3 text-sm leading-relaxed text-neutral-200">{selected.aiInsight}</p>
-                <div className="mt-4 text-[10px] tracking-wide text-cyan-400">AI CONFIDENCE: {selected.confidence}%</div>
               </section>
 
               {/* connections */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
+              <section id="connections" className="scroll-mt-8 border border-neutral-800 bg-[#111] p-6">
                 <div className="flex items-center justify-between border-b border-neutral-800 pb-4">
                   <h3 className="text-[11px] font-semibold tracking-[0.16em] text-white">CONNECTIONS</h3>
                   <button className="text-[10px] tracking-widest text-red-400 hover:text-red-300">VIEW IN NETWORK →</button>
@@ -337,7 +319,7 @@ export default function CaseEntitiesPage() {
                       className="flex w-full items-center justify-between border border-neutral-800 bg-[#0d0d0d] px-4 py-3 text-left hover:border-neutral-600"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="text-base">{typeIcon[c.type]}</span>
+                        <EntityTypeMark type={c.type} size="sm" />
                         <div>
                           <div className="text-sm text-white">{c.name}</div>
                           <div className="text-[10px] text-neutral-500">{c.relationship} · {c.type.replace("_", " ")}</div>
@@ -353,7 +335,7 @@ export default function CaseEntitiesPage() {
               </section>
 
               {/* source references */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
+              <section id="source-references" className="scroll-mt-8 border border-neutral-800 bg-[#111] p-6">
                 <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">SOURCE REFERENCES</h3>
                 <div className="mt-4 space-y-3">
                   {selected.sourceRefs.map((s, i) => (
@@ -372,7 +354,7 @@ export default function CaseEntitiesPage() {
               </section>
 
               {/* supporting evidence */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
+              <section id="supporting-evidence" className="scroll-mt-8 border border-neutral-800 bg-[#111] p-6">
                 <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">SUPPORTING EVIDENCE</h3>
                 <div className="mt-4 space-y-3">
                   {selected.evidence.map((ev, i) => {
@@ -396,15 +378,12 @@ export default function CaseEntitiesPage() {
               </section>
 
               {/* metadata */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
+              <section id="entity-metadata" className="scroll-mt-8 border border-neutral-800 bg-[#111] p-6">
                 <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">ENTITY METADATA</h3>
                 <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
                   <MetaRow label="First detected" value={selected.firstDetected} />
                   <MetaRow label="Last detected" value={selected.lastDetected} />
-                  <MetaRow label="Total mentions" value={String(selected.mentionCount)} />
-                  <MetaRow label="Sources" value={String(selected.sourceCount)} />
-                  <MetaRow label="Entity type" value={selected.type.replace("_", " ")} />
-                  <MetaRow label="Verification status" value={selected.verification} highlight={selected.verification === "VERIFIED" ? "text-emerald-400" : "text-amber-400"} />
+                  <MetaRow label="Verification" value={selected.verification} highlight={selected.verification === "VERIFIED" ? "text-emerald-400" : "text-amber-400"} />
                 </div>
               </section>
             </div>

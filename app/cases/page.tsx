@@ -113,6 +113,13 @@ export default function CasesPage() {
     <div className="min-h-screen bg-[#050505] text-neutral-200 font-sans">
       <div className="max-w-[1180px] mx-auto px-8 py-10">
 
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="mb-5 text-[11px] tracking-[0.16em] text-neutral-500 hover:text-red-400"
+        >
+          ← DASHBOARD
+        </button>
+
         <div className="flex items-center gap-2 text-[11px] tracking-[2px] text-neutral-500 mb-5">
           <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
           CASE MANAGEMENT
