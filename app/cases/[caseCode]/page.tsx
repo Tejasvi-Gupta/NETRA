@@ -1,7 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import SourcePreviewGrid from "@/components/SourcePreviewGrid";
+import type { Source } from "@/types/netra";
 
 type EntityType = "PERSON" | "ORGANIZATION" | "LOCATION" | "PHONE" | "VEHICLE" | "BANK_ACCOUNT" | "OTHER";
 type Relevance = "HIGH" | "MEDIUM" | "LOW";
@@ -281,6 +284,66 @@ const relevanceColor: Record<Relevance, string> = {
   LOW: "text-neutral-400 border-neutral-700 bg-neutral-800/30",
 };
 
+type TimelineKind = "case" | "alert" | "upload";
+
+interface TimelineEvent {
+  id: string;
+  type: TimelineKind;
+  title: string;
+  detail: string;
+  timestamp: string;
+  severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  sourceName?: string;
+}
+
+const fallbackTimeline: TimelineEvent[] = [
+  {
+    id: "case-created",
+    type: "case",
+    title: "Case created",
+    detail: "Investigation intake was logged and assigned for analysis.",
+    timestamp: "2026-04-12T09:45:00.000Z",
+    severity: "LOW",
+  },
+  {
+    id: "doc-upload-1",
+    type: "upload",
+    title: "Document uploaded",
+    detail: "FIR_Report_01.pdf was added to the case evidence repository.",
+    timestamp: "2026-04-20T14:12:00.000Z",
+    sourceName: "FIR_Report_01.pdf",
+  },
+  {
+    id: "doc-upload-2",
+    type: "upload",
+    title: "Data file imported",
+    detail: "Financial_Record.xlsx was uploaded for transaction correlation analysis.",
+    timestamp: "2026-04-22T10:40:00.000Z",
+    sourceName: "Financial_Record.xlsx",
+  },
+  {
+    id: "alert-1",
+    type: "alert",
+    title: "Alert triggered",
+    detail: "Repeated communication pattern was flagged across a high-risk connection set.",
+    timestamp: "2026-04-22T12:10:00.000Z",
+    severity: "HIGH",
+  },
+];
+
+function formatTimelineDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export default function CaseEntitiesPage() {
   const router = useRouter();
   const { caseCode } = useParams<{ caseCode: string }>();
@@ -291,6 +354,104 @@ export default function CaseEntitiesPage() {
   const [selectedId, setSelectedId] = useState(sampleEntities[0]?.id ?? "");
   const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
   const [previewSource, setPreviewSource] = useState<SourceRef | null>(null);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>(fallbackTimeline);
+  const [sources, setSources] = useState<Source[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function fetchTimeline() {
+      try {
+        const { data: caseRow, error: caseError } = await supabase
+          .from("cases")
+          .select("id, created_at")
+          .eq("case_code", caseCode)
+          .maybeSingle();
+
+        if (caseError) throw caseError;
+        if (!caseRow) {
+          if (mounted) {
+            setTimeline(fallbackTimeline);
+            setSources([]);
+          }
+          return;
+        }
+
+        const [alertsRes, sourcesRes] = await Promise.all([
+          supabase
+            .from("alerts")
+            .select("*")
+            .eq("case_id", caseRow.id)
+            .order("created_at", { ascending: false })
+            .limit(10),
+          supabase
+            .from("sources")
+            .select("*")
+            .eq("case_id", caseRow.id)
+            .order("uploaded_at", { ascending: false })
+            .limit(10),
+        ]);
+
+        if (alertsRes.error && !["42P01", "42703"].includes(alertsRes.error.code ?? "")) {
+          throw alertsRes.error;
+        }
+
+        if (sourcesRes.error && !["42P01", "42703"].includes(sourcesRes.error.code ?? "")) {
+          throw sourcesRes.error;
+        }
+
+        const events: TimelineEvent[] = [];
+
+        events.push({
+          id: `case-${caseRow.id}`,
+          type: "case",
+          title: "Case created",
+          detail: `Investigation ${caseCode} was registered in the system.`,
+          timestamp: caseRow.created_at ?? new Date().toISOString(),
+          severity: "LOW",
+        });
+
+        for (const alert of alertsRes.data ?? []) {
+          events.push({
+            id: `alert-${alert.id}`,
+            type: "alert",
+            title: alert.title ?? "Alert triggered",
+            detail: alert.description ?? "A new investigation alert was generated.",
+            timestamp: alert.created_at ?? new Date().toISOString(),
+            severity: (alert.severity as TimelineEvent["severity"]) ?? "MEDIUM",
+          });
+        }
+
+        for (const source of sourcesRes.data ?? []) {
+          events.push({
+            id: `source-${source.id}`,
+            type: "upload",
+            title: "Document uploaded",
+            detail: `${source.file_name ?? "Source file"} was uploaded to the case repository.`,
+            timestamp: source.uploaded_at ?? new Date().toISOString(),
+            sourceName: source.file_name ?? undefined,
+          });
+        }
+
+        events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+        if (mounted) {
+          setTimeline(events.length > 0 ? events : fallbackTimeline);
+          setSources((sourcesRes.data ?? []) as Source[]);
+        }
+      } catch {
+        if (mounted) {
+          setTimeline(fallbackTimeline);
+          setSources([]);
+        }
+      }
+    }
+
+    void fetchTimeline();
+    return () => {
+      mounted = false;
+    };
+  }, [caseCode]);
 
   const filtered = useMemo(() => {
     return sampleEntities.filter((e) => {
@@ -347,6 +508,52 @@ export default function CaseEntitiesPage() {
             {relevanceFilters.map((r) => <option key={r} value={r}>{r === "ALL" ? "Relevance: All" : `Relevance: ${r}`}</option>)}
           </select>
         </div>
+
+        <section className="mt-6 border border-neutral-800 bg-[#111] p-6">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-[11px] font-semibold tracking-[0.16em] text-white">CASE TIMELINE</h3>
+            <span className="text-[10px] text-neutral-500">Activity log</span>
+          </div>
+
+          <div className="mt-5 space-y-5">
+            {timeline.map((event) => {
+              const isAlert = event.type === "alert";
+              const isUpload = event.type === "upload";
+              const dotColor = isAlert ? "bg-red-500" : isUpload ? "bg-cyan-400" : "bg-amber-400";
+
+              return (
+                <div key={event.id} className="relative pl-8">
+                  <div className={`absolute left-0 top-1.5 h-3 w-3 rounded-full ${dotColor}`} />
+                  <div className="border-b border-neutral-800 pb-4 last:border-b-0 last:pb-0">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span className="text-[9px] tracking-[0.18em] text-neutral-500 uppercase">
+                        {event.type === "case" ? "CASE" : isAlert ? "ALERT" : "UPLOAD"}
+                      </span>
+                      <span className="text-[10px] text-neutral-600">{formatTimelineDate(event.timestamp)}</span>
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-white">{event.title}</div>
+                    <p className="mt-1 text-sm leading-relaxed text-neutral-300">{event.detail}</p>
+                    {event.sourceName && (
+                      <div className="mt-2 text-[10px] tracking-wide text-neutral-500">
+                        Related source: {event.sourceName}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="mt-6 border border-neutral-800 bg-[#111] p-5 md:p-6">
+          <div className="flex items-center justify-between border-b border-neutral-800 pb-5">
+            <h2 className="text-sm font-semibold tracking-[0.14em] text-white">UPLOADED SOURCES</h2>
+            <span className="text-[10px] tracking-widest text-neutral-500">{sources.length} FILES</span>
+          </div>
+          <div className="mt-5">
+            <SourcePreviewGrid sources={sources} />
+          </div>
+        </section>
 
         {/* master-detail layout */}
         <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.7fr)]">
@@ -523,6 +730,21 @@ export default function CaseEntitiesPage() {
               Select an entity to view its intelligence profile.
             </div>
           )}
+        </div>
+
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={() => router.push(`/cases/${caseCode}/timeline`)}
+            className="border border-neutral-800 px-4 py-2 text-[10px] tracking-widest text-neutral-400 hover:border-red-500/60 hover:text-red-300"
+          >
+            VIEW TIMELINE →
+          </button>
+          <button
+            onClick={() => router.push(`/cases/${caseCode}/evidence`)}
+            className="border border-neutral-800 px-4 py-2 text-[10px] tracking-widest text-neutral-400 hover:border-red-500/60 hover:text-red-300"
+          >
+            VIEW EVIDENCE →
+          </button>
         </div>
       </div>
 

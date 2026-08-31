@@ -1,5 +1,8 @@
 export type CasePriority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export type CaseStatus = "ACTIVE" | "UNDER_REVIEW" | "CLOSED";
+export type SourceCategory = "DOCUMENTS" | "CSV_EXCEL" | "IMAGES" | "TEXT_NOTES" | "URL_SOURCES";
+export type EntityType = "PERSON" | "ORGANIZATION" | "VEHICLE" | "LOCATION" | "PHONE" | "BANK_ACCOUNT";
+export type RiskLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "MEDIUM_HIGH" | "LOW" | "WITNESS";
 
 export interface Case {
   id: string;
@@ -23,9 +26,6 @@ export interface Alert {
   cases?: { case_code: string; title: string };
 }
 
-
-export type SourceCategory = "DOCUMENTS" | "CSV_EXCEL" | "IMAGES" | "TEXT_NOTES" | "URL_SOURCES";
-
 export interface Source {
   id: string;
   case_id: string;
@@ -34,4 +34,75 @@ export interface Source {
   file_url: string | null;
   file_size: number | null;
   uploaded_at: string;
+}
+
+export interface Entity {
+  id: string;
+  case_id: string;
+  entity_code: string | null;
+  name: string;
+  entity_type: EntityType;
+  role: string | null;
+  age: number | null;
+  occupation: string | null;
+  risk_level: RiskLevel | null;
+  criminal_history: string | null;
+  verification: "VERIFIED" | "UNVERIFIED";
+  confidence: number | null;
+  first_detected: string | null;
+  last_detected: string | null;
+}
+
+export interface EntityConnection {
+  id: string;
+  case_id: string;
+  from_entity: string;
+  to_entity: string;
+  relationship: string;
+  confidence: number | null;
+  evidence_summary: string | null;
+}
+
+export interface Evidence {
+  id: string;
+  case_id: string;
+  category: string;
+  title: string;
+  summary: string | null;
+  event_date: string | null;
+}
+
+export interface TimelineEvent {
+  id: string;
+  case_id: string;
+  event_date: string;
+  event_time: string | null;
+  title: string;
+  details: string | null;
+}
+
+
+export interface EntityConnectionWithNames extends EntityConnection {
+  from_name?: string;
+  to_name?: string;
+  to_entity_type?: EntityType;
+}
+
+export interface PhoneRecord {
+  id: string;
+  case_id: string;
+  entity_id: string;
+  number: string;
+  pattern_summary: string;
+}
+
+export interface FinancialTransaction {
+  id: string;
+  case_id: string;
+  from_entity: string;
+  to_entity: string;
+  amount: number;
+  label: string;
+  significance: string;
+  transaction_date: string;
 }

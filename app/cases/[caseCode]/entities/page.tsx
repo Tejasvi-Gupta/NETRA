@@ -1,47 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-
-type EntityType = "PERSON" | "ORGANIZATION" | "LOCATION" | "PHONE" | "VEHICLE" | "BANK_ACCOUNT" | "OTHER";
-type Relevance = "HIGH" | "MEDIUM" | "LOW";
-
-interface EvidenceSnippet {
-  source: string;
-  snippet: string;
-  meta: string;
-}
-
-interface Connection {
-  name: string;
-  type: EntityType;
-  relationship: string;
-  relevance: Relevance;
-  sources: number;
-}
-
-interface SourceRef {
-  name: string;
-  icon: string;
-  meta: string;
-}
-
-interface Entity {
-  id: string;
-  name: string;
-  type: EntityType;
-  relevance: Relevance;
-  confidence: number;
-  sourceCount: number;
-  mentionCount: number;
-  aiInsight: string;
-  connections: Connection[];
-  sourceRefs: SourceRef[];
-  evidence: EvidenceSnippet[];
-  firstDetected: string;
-  lastDetected: string;
-  verification: "VERIFIED" | "UNVERIFIED";
-}
+import { supabase } from "@/lib/supabase";
+import type { Case, Entity, EntityType, PhoneRecord, FinancialTransaction } from "@/types/netra";
 
 const typeIcon: Record<EntityType, string> = {
   PERSON: "👤",
@@ -50,162 +12,160 @@ const typeIcon: Record<EntityType, string> = {
   PHONE: "📞",
   VEHICLE: "🚗",
   BANK_ACCOUNT: "🏦",
-  OTHER: "🔎",
 };
 
-// ── sample entities for this case — replace with a Supabase fetch once entity extraction exists ──
-const sampleEntities: Entity[] = [
-  {
-    id: "1", name: "Ravi Kumar", type: "PERSON", relevance: "HIGH", confidence: 91,
-    sourceCount: 3, mentionCount: 7,
-    aiInsight: "Ravi Kumar appears across 3 independent sources. The entity is directly associated with Amit Sharma and appears in a financial transaction recorded in Financial_Record.xlsx.",
-    connections: [
-      { name: "Amit Sharma", type: "PERSON", relationship: "Associated with", relevance: "MEDIUM", sources: 2 },
-      { name: "+91 XXXXXXXX", type: "PHONE", relationship: "Contact number", relevance: "HIGH", sources: 2 },
-      { name: "XXXX1234", type: "BANK_ACCOUNT", relationship: "Transaction party", relevance: "MEDIUM", sources: 1 },
-    ],
-    sourceRefs: [
-      { name: "FIR_Report_01.pdf", icon: "📄", meta: "Mentioned 4 times · Page 3" },
-      { name: "Financial_Record.xlsx", icon: "📊", meta: "2 related records" },
-      { name: "Field_Note.txt", icon: "📝", meta: "Mentioned 1 time" },
-    ],
-    evidence: [
-      { source: "FIR_Report_01.pdf", snippet: "Ravi Kumar was seen meeting Amit Sharma near Delhi Railway Station.", meta: "Page 3" },
-      { source: "Financial_Record.xlsx", snippet: "Transaction involving Ravi Kumar — ₹2,40,000", meta: "Row 18" },
-    ],
-    firstDetected: "12 Apr 2026", lastDetected: "27 Apr 2026", verification: "UNVERIFIED",
-  },
-  {
-    id: "2", name: "Amit Sharma", type: "PERSON", relevance: "MEDIUM", confidence: 78,
-    sourceCount: 2, mentionCount: 4,
-    aiInsight: "Amit Sharma is consistently linked to Ravi Kumar across communication and location records, suggesting a coordinated association rather than incidental contact.",
-    connections: [
-      { name: "Ravi Kumar", type: "PERSON", relationship: "Associated with", relevance: "HIGH", sources: 2 },
-      { name: "Delhi", type: "LOCATION", relationship: "Seen at", relevance: "MEDIUM", sources: 2 },
-    ],
-    sourceRefs: [
-      { name: "FIR_Report_01.pdf", icon: "📄", meta: "Mentioned 2 times · Page 3" },
-      { name: "CDR_Data.csv", icon: "📊", meta: "3 related records" },
-    ],
-    evidence: [
-      { source: "FIR_Report_01.pdf", snippet: "...Amit Sharma, known associate of Ravi Kumar, was present at the location.", meta: "Page 3" },
-    ],
-    firstDetected: "12 Apr 2026", lastDetected: "25 Apr 2026", verification: "UNVERIFIED",
-  },
-  {
-    id: "3", name: "Delhi", type: "LOCATION", relevance: "MEDIUM", confidence: 85,
-    sourceCount: 4, mentionCount: 12,
-    aiInsight: "Delhi Railway Station is referenced as a recurring meeting point across multiple sources and appears to correlate with movement patterns of two flagged entities.",
-    connections: [
-      { name: "Ravi Kumar", type: "PERSON", relationship: "Seen at", relevance: "HIGH", sources: 3 },
-      { name: "Amit Sharma", type: "PERSON", relationship: "Seen at", relevance: "MEDIUM", sources: 2 },
-    ],
-    sourceRefs: [
-      { name: "FIR_Report_01.pdf", icon: "📄", meta: "Mentioned 5 times · Page 2–3" },
-      { name: "CDR_Data.csv", icon: "📊", meta: "Cell tower correlation, 6 records" },
-      { name: "CCTV_Image_03.jpg", icon: "🖼️", meta: "Visual reference" },
-    ],
-    evidence: [
-      { source: "FIR_Report_01.pdf", snippet: "...seen near Delhi Railway Station with Mohit Kumar.", meta: "Page 2" },
-    ],
-    firstDetected: "10 Apr 2026", lastDetected: "27 Apr 2026", verification: "VERIFIED",
-  },
-  {
-    id: "4", name: "+91 98XXXXXXXX", type: "PHONE", relevance: "HIGH", confidence: 88,
-    sourceCount: 2, mentionCount: 5,
-    aiInsight: "This number shows a sharp increase in call frequency in the 72 hours preceding the reported incident, correlating with Ravi Kumar's known contacts.",
-    connections: [
-      { name: "Ravi Kumar", type: "PERSON", relationship: "Registered contact", relevance: "HIGH", sources: 2 },
-    ],
-    sourceRefs: [
-      { name: "CDR_Data.csv", icon: "📊", meta: "5 related records" },
-    ],
-    evidence: [
-      { source: "CDR_Data.csv", snippet: "18 outgoing calls recorded within 24 hours, up from a baseline of 2/day.", meta: "Row 4–22" },
-    ],
-    firstDetected: "14 Apr 2026", lastDetected: "26 Apr 2026", verification: "UNVERIFIED",
-  },
-  {
-    id: "5", name: "A/C XXXX1234", type: "BANK_ACCOUNT", relevance: "MEDIUM", confidence: 74,
-    sourceCount: 1, mentionCount: 6,
-    aiInsight: "Six transactions tied to this account form a structured pattern of sub-₹50,000 transfers, consistent with a funneling pattern rather than routine activity.",
-    connections: [
-      { name: "Ravi Kumar", type: "PERSON", relationship: "Transaction party", relevance: "MEDIUM", sources: 1 },
-    ],
-    sourceRefs: [
-      { name: "Financial_Record.xlsx", icon: "📊", meta: "6 related records" },
-    ],
-    evidence: [
-      { source: "Financial_Record.xlsx", snippet: "Transaction involving Ravi Kumar — ₹2,40,000", meta: "Row 18" },
-    ],
-    firstDetected: "16 Apr 2026", lastDetected: "24 Apr 2026", verification: "UNVERIFIED",
-  },
-  {
-    id: "6", name: "UP16 XX 1234", type: "VEHICLE", relevance: "MEDIUM", confidence: 69,
-    sourceCount: 1, mentionCount: 2,
-    aiInsight: "Vehicle registration overlaps with two known drop-point locations flagged in prior surveillance reports for this case cluster.",
-    connections: [
-      { name: "Delhi", type: "LOCATION", relationship: "Seen at", relevance: "MEDIUM", sources: 1 },
-    ],
-    sourceRefs: [
-      { name: "Field_Note.txt", icon: "📝", meta: "Mentioned 2 times" },
-    ],
-    evidence: [
-      { source: "Field_Note.txt", snippet: "Vehicle UP16XX1234 observed parked near the location for over 3 hours.", meta: "" },
-    ],
-    firstDetected: "18 Apr 2026", lastDetected: "22 Apr 2026", verification: "UNVERIFIED",
-  },
-  {
-    id: "7", name: "XYZ Logistics", type: "ORGANIZATION", relevance: "LOW", confidence: 52,
-    sourceCount: 1, mentionCount: 1,
-    aiInsight: "Mentioned once in association with the vehicle entity. Confidence is low due to a single low-context source reference.",
-    connections: [
-      { name: "UP16 XX 1234", type: "VEHICLE", relationship: "Registered to", relevance: "LOW", sources: 1 },
-    ],
-    sourceRefs: [
-      { name: "Field_Note.txt", icon: "📝", meta: "Mentioned 1 time" },
-    ],
-    evidence: [
-      { source: "Field_Note.txt", snippet: "Vehicle registered under XYZ Logistics as per RTO lookup.", meta: "" },
-    ],
-    firstDetected: "18 Apr 2026", lastDetected: "18 Apr 2026", verification: "UNVERIFIED",
-  },
-];
-
-const typeFilters: (EntityType | "ALL")[] = ["ALL", "PERSON", "ORGANIZATION", "LOCATION", "PHONE", "VEHICLE", "BANK_ACCOUNT", "OTHER"];
-const relevanceFilters: (Relevance | "ALL")[] = ["ALL", "HIGH", "MEDIUM", "LOW"];
-
-const relevanceColor: Record<Relevance, string> = {
-  HIGH: "text-red-400 border-red-500/30 bg-red-500/5",
+const riskColor: Record<string, string> = {
+  CRITICAL: "text-red-400 border-red-500/30 bg-red-500/5",
+  HIGH: "text-orange-400 border-orange-500/30 bg-orange-500/5",
+  MEDIUM_HIGH: "text-amber-400 border-amber-500/30 bg-amber-500/5",
   MEDIUM: "text-amber-400 border-amber-500/30 bg-amber-500/5",
   LOW: "text-neutral-400 border-neutral-700 bg-neutral-800/30",
+  WITNESS: "text-cyan-400 border-cyan-500/30 bg-cyan-500/5",
 };
+
+interface ConnectionRow {
+  id: string;
+  relationship: string;
+  confidence: number | null;
+  evidence_summary: string | null;
+  direction: "OUT" | "IN";
+  otherEntity: Entity;
+}
+
+const typeFilters: (EntityType | "ALL")[] = ["ALL", "PERSON", "ORGANIZATION", "LOCATION", "VEHICLE", "BANK_ACCOUNT"];
 
 export default function CaseEntitiesPage() {
   const router = useRouter();
   const { caseCode } = useParams<{ caseCode: string }>();
 
+  const [caseRecord, setCaseRecord] = useState<Case | null>(null);
+  const [entities, setEntities] = useState<Entity[]>([]);
+  const [connections, setConnections] = useState<{ id: string; from_entity: string; to_entity: string; relationship: string; confidence: number | null; evidence_summary: string | null }[]>([]);
+  const [phoneRecords, setPhoneRecords] = useState<PhoneRecord[]>([]);
+  const [financials, setFinancials] = useState<FinancialTransaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<EntityType | "ALL">("ALL");
-  const [relevanceFilter, setRelevanceFilter] = useState<Relevance | "ALL">("ALL");
-  const [selectedId, setSelectedId] = useState(sampleEntities[0]?.id ?? "");
-  const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!caseCode) return;
+
+    let isMounted = true;
+
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+
+      const { data: caseData, error: caseError } = await supabase
+        .from("cases")
+        .select("*")
+        .eq("case_code", caseCode)
+        .single();
+
+      if (caseError || !caseData) {
+        if (!isMounted) return;
+        setError(caseError?.message ?? "Case not found.");
+        setLoading(false);
+        return;
+      }
+
+      if (!isMounted) return;
+      setCaseRecord(caseData);
+
+      const [entitiesRes, connectionsRes, phonesRes, financialsRes] = await Promise.all([
+        supabase.from("entities").select("*").eq("case_id", caseData.id).order("confidence", { ascending: false }),
+        supabase.from("entity_connections").select("*").eq("case_id", caseData.id),
+        supabase.from("phone_records").select("*").eq("case_id", caseData.id),
+        supabase.from("financial_transactions").select("*").eq("case_id", caseData.id),
+      ]);
+
+      if (!isMounted) return;
+
+      if (entitiesRes.error) {
+        setError(entitiesRes.error.message);
+        setLoading(false);
+        return;
+      }
+
+      setEntities(entitiesRes.data ?? []);
+      setConnections(connectionsRes.data ?? []);
+      setPhoneRecords(phonesRes.data ?? []);
+      setFinancials(financialsRes.data ?? []);
+      if (entitiesRes.data && entitiesRes.data.length > 0) {
+        setSelectedId(entitiesRes.data[0].id);
+      }
+      setLoading(false);
+    };
+
+    void loadData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [caseCode]);
 
   const filtered = useMemo(() => {
-    return sampleEntities.filter((e) => {
+    return entities.filter((e) => {
       const matchesSearch = !search.trim() || e.name.toLowerCase().includes(search.toLowerCase());
-      const matchesType = typeFilter === "ALL" || e.type === typeFilter;
-      const matchesRelevance = relevanceFilter === "ALL" || e.relevance === relevanceFilter;
-      return matchesSearch && matchesType && matchesRelevance;
+      const matchesType = typeFilter === "ALL" || e.entity_type === typeFilter;
+      return matchesSearch && matchesType;
     });
-  }, [search, typeFilter, relevanceFilter]);
+  }, [entities, search, typeFilter]);
 
-  const selected = sampleEntities.find((e) => e.id === selectedId) ?? filtered[0] ?? null;
+  const selected = entities.find((e) => e.id === selectedId) ?? filtered[0] ?? null;
+
+  const entityConnections: ConnectionRow[] = useMemo(() => {
+    if (!selected) return [];
+    const rows: ConnectionRow[] = [];
+    for (const c of connections) {
+      if (c.from_entity === selected.id) {
+        const other = entities.find((e) => e.id === c.to_entity);
+        if (other) rows.push({ ...c, direction: "OUT", otherEntity: other });
+      } else if (c.to_entity === selected.id) {
+        const other = entities.find((e) => e.id === c.from_entity);
+        if (other) rows.push({ ...c, direction: "IN", otherEntity: other });
+      }
+    }
+    return rows;
+  }, [selected, connections, entities]);
+
+  const selectedPhones = useMemo(
+    () => (selected ? phoneRecords.filter((p) => p.entity_id === selected.id) : []),
+    [selected, phoneRecords]
+  );
+
+  const selectedFinancials = useMemo(() => {
+    if (!selected) return [];
+    return financials
+      .filter((f) => f.from_entity === selected.id || f.to_entity === selected.id)
+      .map((f) => ({
+        ...f,
+        direction: f.from_entity === selected.id ? "SENT" : "RECEIVED",
+        counterparty: entities.find((e) => e.id === (f.from_entity === selected.id ? f.to_entity : f.from_entity)),
+      }));
+  }, [selected, financials, entities]);
+
+  if (loading) {
+    return <main className="min-h-screen bg-[#080808] px-6 py-24 text-center font-mono text-xs tracking-widest text-neutral-500">LOADING ENTITY INTELLIGENCE…</main>;
+  }
+
+  if (error || !caseRecord) {
+    return (
+      <main className="min-h-screen bg-[#080808] px-6 py-24 text-center text-neutral-300">
+        <p className="text-sm text-red-400">{error ?? "Case not found."}</p>
+        <button onClick={() => router.push("/cases")} className="mt-6 border border-neutral-700 px-4 py-2 text-xs tracking-widest hover:border-red-500">
+          BACK TO CASES
+        </button>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#080808] text-neutral-200">
-      <div className="mx-auto max-w-[1500px] px-6 py-8 md:px-10">
-        {/* header */}
+      <div className="mx-auto max-w-375 px-6 py-8 md:px-10">
         <button onClick={() => router.push(`/cases/${caseCode}`)} className="text-[11px] tracking-[0.16em] text-neutral-400 hover:text-red-400">
           ← BACK TO CASE
         </button>
@@ -214,18 +174,16 @@ export default function CaseEntitiesPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-white">ALL ENTITIES</h1>
             <p className="mt-2 text-xs text-neutral-500">
-              {sampleEntities.length} entities identified across{" "}
-              {new Set(sampleEntities.flatMap((e) => e.sourceRefs.map((s) => s.name))).size} sources
+              {entities.length} entities identified · {caseRecord.title}
             </p>
           </div>
           <span className="border border-neutral-800 px-3 py-1.5 text-[10px] tracking-widest text-neutral-400">
-            CASE ID: {caseCode}
+            CASE ID: {caseRecord.case_code}
           </span>
         </div>
 
-        {/* search + filters */}
         <div className="mt-6 flex flex-wrap items-center gap-3">
-          <div className="flex min-w-[240px] flex-1 items-center gap-2 border border-neutral-800 bg-[#0b0b0b] px-3.5 py-2.5">
+          <div className="flex min-w-60 flex-1 items-center gap-2 border border-neutral-800 bg-[#0b0b0b] px-3.5 py-2.5">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b6b6b" strokeWidth="2">
               <circle cx="11" cy="11" r="7" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -241,179 +199,190 @@ export default function CaseEntitiesPage() {
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as EntityType | "ALL")} className="border border-neutral-800 bg-[#0b0b0b] px-3 py-2.5 text-xs text-neutral-300 outline-none">
             {typeFilters.map((t) => <option key={t} value={t}>{t === "ALL" ? "All Types" : t.replace("_", " ")}</option>)}
           </select>
-
-          <select value={relevanceFilter} onChange={(e) => setRelevanceFilter(e.target.value as Relevance | "ALL")} className="border border-neutral-800 bg-[#0b0b0b] px-3 py-2.5 text-xs text-neutral-300 outline-none">
-            {relevanceFilters.map((r) => <option key={r} value={r}>{r === "ALL" ? "Relevance: All" : `Relevance: ${r}`}</option>)}
-          </select>
         </div>
 
-        {/* master-detail layout */}
-        <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.7fr)]">
-          {/* LEFT: entity list */}
-          <div className="max-h-[calc(100vh-260px)] overflow-y-auto border border-neutral-800 bg-[#0d0d0d]">
-            {filtered.length === 0 ? (
-              <div className="px-5 py-10 text-center text-xs text-neutral-500">No entities match your filters.</div>
-            ) : (
-              filtered.map((e) => (
-                <button
-                  key={e.id}
-                  onClick={() => setSelectedId(e.id)}
-                  className={`w-full border-b border-neutral-800 px-4 py-4 text-left transition-colors last:border-0 hover:bg-[#131313] ${
-                    selected?.id === e.id ? "bg-[#160c0c] border-l-2 border-l-red-500 pl-[14px]" : ""
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="text-lg">{typeIcon[e.type]}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold text-white truncate">{e.name}</div>
-                      <div className="mt-1 text-[9px] tracking-widest text-neutral-500">{e.type.replace("_", " ")}</div>
-                      <div className={`mt-2 inline-block border px-2 py-0.5 text-[9px] tracking-wide ${relevanceColor[e.relevance]}`}>
-                        {e.relevance} RELEVANCE
-                      </div>
-                      <div className="mt-2 text-[10px] text-neutral-600">
-                        {e.sourceCount} source{e.sourceCount !== 1 ? "s" : ""} · {e.mentionCount} mentions
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              ))
-            )}
+        {entities.length === 0 ? (
+          <div className="mt-10 border border-neutral-800 bg-[#0d0d0d] py-16 text-center">
+            <div className="text-sm font-semibold text-white">NO ENTITIES IDENTIFIED</div>
+            <p className="mt-2 text-xs text-neutral-500">Upload case sources to begin entity extraction.</p>
           </div>
-
-          {/* RIGHT: entity analysis panel */}
-          {selected ? (
-            <div className="space-y-5">
-              {/* entity header */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-3xl">{typeIcon[selected.type]}</span>
-                    <div>
-                      <h2 className="text-2xl font-bold text-white">{selected.name}</h2>
-                      <div className="mt-1 text-[10px] tracking-widest text-neutral-500">{selected.type.replace("_", " ")}</div>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className={`border px-2.5 py-1 text-[9px] tracking-widest ${relevanceColor[selected.relevance]}`}>
-                      {selected.relevance} RELEVANCE
-                    </span>
-                    <span className="border border-cyan-500/30 bg-cyan-500/5 px-2.5 py-1 text-[9px] tracking-widest text-cyan-300">
-                      AI IDENTIFIED
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid grid-cols-3 gap-3">
-                  <MiniMetric label="CONFIDENCE" value={`${selected.confidence}%`} />
-                  <MiniMetric label="SOURCES" value={String(selected.sourceCount)} />
-                  <MiniMetric label="MENTIONS" value={String(selected.mentionCount)} />
-                </div>
-              </section>
-
-              {/* AI insight */}
-              <section className="border border-cyan-500/20 bg-[#0d1315] p-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[11px] font-semibold tracking-[0.16em] text-cyan-300">AI INSIGHT</h3>
-                  <span className="text-[9px] tracking-wide text-neutral-500">Generated from {selected.sourceCount} sources</span>
-                </div>
-                <p className="mt-3 text-sm leading-relaxed text-neutral-200">{selected.aiInsight}</p>
-                <div className="mt-4 text-[10px] tracking-wide text-cyan-400">AI CONFIDENCE: {selected.confidence}%</div>
-              </section>
-
-              {/* connections */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
-                <div className="flex items-center justify-between border-b border-neutral-800 pb-4">
-                  <h3 className="text-[11px] font-semibold tracking-[0.16em] text-white">CONNECTIONS</h3>
-                  <button className="text-[10px] tracking-widest text-red-400 hover:text-red-300">VIEW IN NETWORK →</button>
-                </div>
-                <div className="mt-4 space-y-3">
-                  {selected.connections.map((c, i) => (
+        ) : (
+          <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.7fr)]">
+            {/* LEFT: entity list */}
+            <div className="max-h-[calc(100vh-260px)] overflow-y-auto border border-neutral-800 bg-[#0d0d0d]">
+              {filtered.length === 0 ? (
+                <div className="px-5 py-10 text-center text-xs text-neutral-500">No entities match your filters.</div>
+              ) : (
+                filtered.map((e) => {
+                  const connCount = connections.filter((c) => c.from_entity === e.id || c.to_entity === e.id).length;
+                  return (
                     <button
-                      key={i}
-                      onClick={() => {
-                        const target = sampleEntities.find((e) => e.name === c.name);
-                        if (target) setSelectedId(target.id);
-                      }}
-                      className="flex w-full items-center justify-between border border-neutral-800 bg-[#0d0d0d] px-4 py-3 text-left hover:border-neutral-600"
+                      key={e.id}
+                      onClick={() => setSelectedId(e.id)}
+                      className={`w-full border-b border-neutral-800 px-4 py-4 text-left transition-colors last:border-0 hover:bg-[#131313] ${
+                        selected?.id === e.id ? "bg-[#160c0c] border-l-2 border-l-red-500 pl-3.5" : ""
+                      }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="text-base">{typeIcon[c.type]}</span>
-                        <div>
-                          <div className="text-sm text-white">{c.name}</div>
-                          <div className="text-[10px] text-neutral-500">{c.relationship} · {c.type.replace("_", " ")}</div>
+                      <div className="flex items-start gap-3">
+                        <span className="text-lg">{typeIcon[e.entity_type]}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold text-white truncate">{e.name}</div>
+                          <div className="mt-1 text-[9px] tracking-widest text-neutral-500">
+                            {e.entity_type} {e.entity_code ? `· ${e.entity_code}` : ""}
+                          </div>
+                          {e.risk_level && (
+                            <div className={`mt-2 inline-block border px-2 py-0.5 text-[9px] tracking-wide ${riskColor[e.risk_level] ?? riskColor.LOW}`}>
+                              {e.risk_level.replace("_", " ")} RISK
+                            </div>
+                          )}
+                          <div className="mt-2 text-[10px] text-neutral-600">
+                            {connCount} connection{connCount !== 1 ? "s" : ""} {e.confidence ? `· ${e.confidence}% confidence` : ""}
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div className={`text-[9px] tracking-wide ${relevanceColor[c.relevance].split(" ")[0]}`}>{c.relevance}</div>
-                        <div className="text-[9px] text-neutral-600 mt-0.5">{c.sources} source{c.sources !== 1 ? "s" : ""}</div>
                       </div>
                     </button>
-                  ))}
-                </div>
-              </section>
+                  );
+                })
+              )}
+            </div>
 
-              {/* source references */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
-                <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">SOURCE REFERENCES</h3>
-                <div className="mt-4 space-y-3">
-                  {selected.sourceRefs.map((s, i) => (
-                    <div key={i} className="flex items-center justify-between border border-neutral-800 bg-[#0d0d0d] px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-base">{s.icon}</span>
-                        <div>
-                          <div className="text-sm text-white">{s.name}</div>
-                          <div className="text-[10px] text-neutral-500">{s.meta}</div>
+            {/* RIGHT: entity analysis panel */}
+            {selected ? (
+              <div className="space-y-5">
+                <section className="border border-neutral-800 bg-[#111] p-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">{typeIcon[selected.entity_type]}</span>
+                      <div>
+                        <h2 className="text-2xl font-bold text-white">{selected.name}</h2>
+                        <div className="mt-1 text-[10px] tracking-widest text-neutral-500">
+                          {selected.entity_type} {selected.entity_code ? `· ${selected.entity_code}` : ""}
                         </div>
+                        {selected.role && <div className="mt-1 text-xs text-neutral-400">{selected.role}</div>}
                       </div>
-                      <button className="text-[10px] tracking-widest text-red-400 hover:text-red-300 whitespace-nowrap">VIEW SOURCE →</button>
                     </div>
-                  ))}
-                </div>
-              </section>
+                    <div className="flex gap-2">
+                      {selected.risk_level && (
+                        <span className={`border px-2.5 py-1 text-[9px] tracking-widest ${riskColor[selected.risk_level] ?? riskColor.LOW}`}>
+                          {selected.risk_level.replace("_", " ")} RISK
+                        </span>
+                      )}
+                      <span className={`border px-2.5 py-1 text-[9px] tracking-widest ${
+                        selected.verification === "VERIFIED" ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/5" : "text-amber-400 border-amber-500/30 bg-amber-500/5"
+                      }`}>
+                        {selected.verification}
+                      </span>
+                    </div>
+                  </div>
 
-              {/* supporting evidence */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
-                <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">SUPPORTING EVIDENCE</h3>
-                <div className="mt-4 space-y-3">
-                  {selected.evidence.map((ev, i) => {
-                    const key = `${selected.id}-${i}`;
-                    const expanded = expandedEvidence === key;
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => setExpandedEvidence(expanded ? null : key)}
-                        className="w-full border border-neutral-800 bg-[#0d0d0d] px-4 py-3 text-left hover:border-neutral-600"
-                      >
-                        <div className="text-[10px] tracking-widest text-neutral-500">{ev.source}</div>
-                        <p className={`mt-2 text-sm text-neutral-200 ${expanded ? "" : "line-clamp-2"}`}>
-                          &quot;{ev.snippet}&quot;
-                        </p>
-                        {ev.meta && <div className="mt-2 text-[9px] text-neutral-600">{ev.meta}</div>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
+                  <div className="mt-6 grid grid-cols-3 gap-3">
+                    <MiniMetric label="CONFIDENCE" value={selected.confidence ? `${selected.confidence}%` : "—"} />
+                    <MiniMetric label="CONNECTIONS" value={String(entityConnections.length)} />
+                    <MiniMetric label="AGE" value={selected.age ? String(selected.age) : "—"} />
+                  </div>
 
-              {/* metadata */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
-                <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">ENTITY METADATA</h3>
-                <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
-                  <MetaRow label="First detected" value={selected.firstDetected} />
-                  <MetaRow label="Last detected" value={selected.lastDetected} />
-                  <MetaRow label="Total mentions" value={String(selected.mentionCount)} />
-                  <MetaRow label="Sources" value={String(selected.sourceCount)} />
-                  <MetaRow label="Entity type" value={selected.type.replace("_", " ")} />
-                  <MetaRow label="Verification status" value={selected.verification} highlight={selected.verification === "VERIFIED" ? "text-emerald-400" : "text-amber-400"} />
-                </div>
-              </section>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center border border-neutral-800 bg-[#0d0d0d] py-24 text-center text-sm text-neutral-500">
-              Select an entity to view its intelligence profile.
-            </div>
-          )}
-        </div>
+                  {selected.occupation && (
+                    <div className="mt-5 border-t border-neutral-800 pt-4 text-xs text-neutral-400">
+                      <span className="text-neutral-600">OCCUPATION: </span>{selected.occupation}
+                    </div>
+                  )}
+                  {selected.criminal_history && (
+                    <div className="mt-2 text-xs text-neutral-400">
+                      <span className="text-neutral-600">CRIMINAL HISTORY: </span>{selected.criminal_history}
+                    </div>
+                  )}
+                </section>
+
+                {/* connections */}
+                <section className="border border-neutral-800 bg-[#111] p-6">
+                  <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">CONNECTIONS</h3>
+                  {entityConnections.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-neutral-500">No documented connections for this entity.</div>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      {entityConnections.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => setSelectedId(c.otherEntity.id)}
+                          className="flex w-full flex-col gap-2 border border-neutral-800 bg-[#0d0d0d] px-4 py-3 text-left hover:border-neutral-600"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="text-base">{typeIcon[c.otherEntity.entity_type]}</span>
+                              <div>
+                                <div className="text-sm text-white">{c.otherEntity.name}</div>
+                                <div className="text-[10px] text-neutral-500">
+                                  {c.direction === "OUT" ? c.relationship : `Connected via: ${c.relationship}`}
+                                </div>
+                              </div>
+                            </div>
+                            {c.confidence != null && (
+                              <div className="text-[9px] tracking-wide text-cyan-400">{c.confidence}% CONF.</div>
+                            )}
+                          </div>
+                          {c.evidence_summary && (
+                            <p className="text-[11px] leading-relaxed text-neutral-400 pl-8">{c.evidence_summary}</p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* phone records */}
+                {selectedPhones.length > 0 && (
+                  <section className="border border-neutral-800 bg-[#111] p-6">
+                    <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">PHONE / CDR RECORDS</h3>
+                    <div className="mt-4 space-y-3">
+                      {selectedPhones.map((p) => (
+                        <div key={p.id} className="border border-neutral-800 bg-[#0d0d0d] px-4 py-3">
+                          <div className="text-sm text-white font-mono">{p.number}</div>
+                          <div className="mt-1 text-[11px] text-neutral-500">{p.pattern_summary}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* financial records */}
+                {selectedFinancials.length > 0 && (
+                  <section className="border border-neutral-800 bg-[#111] p-6">
+                    <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">FINANCIAL TRAIL</h3>
+                    <div className="mt-4 space-y-3">
+                      {selectedFinancials.map((f) => (
+                        <div key={f.id} className="border border-neutral-800 bg-[#0d0d0d] px-4 py-3">
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm text-white">
+                              {f.direction === "SENT" ? "→ " : "← "}{f.counterparty?.name ?? "Unknown"}
+                            </div>
+                            <div className="text-sm font-semibold text-red-400">₹{Number(f.amount).toLocaleString("en-IN")}</div>
+                          </div>
+                          <div className="mt-1 text-[10px] tracking-wide text-neutral-500">{f.label}</div>
+                          <div className="mt-1 text-[11px] text-neutral-400">{f.significance}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* metadata */}
+                <section className="border border-neutral-800 bg-[#111] p-6">
+                  <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">ENTITY METADATA</h3>
+                  <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
+                    <MetaRow label="First detected" value={selected.first_detected ?? "—"} />
+                    <MetaRow label="Last detected" value={selected.last_detected ?? "—"} />
+                    <MetaRow label="Entity type" value={selected.entity_type.replace("_", " ")} />
+                    <MetaRow label="Verification status" value={selected.verification} highlight={selected.verification === "VERIFIED" ? "text-emerald-400" : "text-amber-400"} />
+                  </div>
+                </section>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center border border-neutral-800 bg-[#0d0d0d] py-24 text-center text-sm text-neutral-500">
+                Select an entity to view its intelligence profile.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </main>
   );
