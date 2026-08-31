@@ -81,6 +81,16 @@ export default function CreateNewCasePage() {
     <div className="min-h-screen bg-[#050505] text-neutral-200 font-sans">
       <div className="max-w-[1180px] mx-auto px-6 py-10 md:px-8">
 
+        <div className="mb-5 flex flex-wrap items-center gap-x-2 text-[11px] tracking-[0.16em] text-neutral-500">
+          <button type="button" onClick={() => router.push("/dashboard")} className="hover:text-red-400">
+            ← DASHBOARD
+          </button>
+          <span className="text-neutral-700">/</span>
+          <button type="button" onClick={() => router.push("/cases")} className="hover:text-red-400">
+            ALL CASES
+          </button>
+        </div>
+
         <div className="flex items-center gap-2 text-[11px] tracking-[2px] text-neutral-500 mb-5">
           <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
           NEW CASE INTAKE

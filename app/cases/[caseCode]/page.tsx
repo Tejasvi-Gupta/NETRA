@@ -68,16 +68,6 @@ interface Entity {
   verification: "VERIFIED" | "UNVERIFIED";
 }
 
-const typeIcon: Record<EntityType, string> = {
-  PERSON: "👤",
-  ORGANIZATION: "🏢",
-  LOCATION: "📍",
-  PHONE: "📞",
-  VEHICLE: "🚗",
-  BANK_ACCOUNT: "🏦",
-  OTHER: "🔎",
-};
-
 // ── sample entities for this case — replace with a Supabase fetch once entity extraction exists ──
 const sampleEntities: Entity[] = [
   {
@@ -454,39 +444,81 @@ export default function CaseEntitiesPage() {
   }, [caseCode]);
 
   const filtered = useMemo(() => {
-    return sampleEntities.filter((e) => {
-      const matchesSearch = !search.trim() || e.name.toLowerCase().includes(search.toLowerCase());
-      const matchesType = typeFilter === "ALL" || e.type === typeFilter;
-      const matchesRelevance = relevanceFilter === "ALL" || e.relevance === relevanceFilter;
-      return matchesSearch && matchesType && matchesRelevance;
-    });
+    return sampleEntities
+      .filter((e) => {
+        const matchesSearch = !search.trim() || e.name.toLowerCase().includes(search.toLowerCase());
+        const matchesType = typeFilter === "ALL" || e.type === typeFilter;
+        const matchesRelevance = relevanceFilter === "ALL" || e.relevance === relevanceFilter;
+        return matchesSearch && matchesType && matchesRelevance;
+      })
+      .sort((a, b) => {
+        const byRelevance = relevanceRank[a.relevance] - relevanceRank[b.relevance];
+        if (byRelevance !== 0) return byRelevance;
+        return b.mentionCount - a.mentionCount;
+      });
   }, [search, typeFilter, relevanceFilter]);
 
   const selected = sampleEntities.find((e) => e.id === selectedId) ?? filtered[0] ?? null;
 
-  return (
-    <main className="min-h-screen bg-[#080808] text-neutral-200">
-      <div className="mx-auto max-w-[1500px] px-6 py-8 md:px-10">
-        {/* header */}
-        <button onClick={() => router.push(`/cases/${caseCode}`)} className="text-[11px] tracking-[0.16em] text-neutral-400 hover:text-red-400">
-          ← BACK TO CASE
-        </button>
+  useEffect(() => {
+    if (filtered.length === 0) return;
+    if (!filtered.some((e) => e.id === selectedId)) {
+      setSelectedId(filtered[0].id);
+    }
+  }, [filtered, selectedId]);
 
-        <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-white">ALL ENTITIES</h1>
-            <p className="mt-2 text-xs text-neutral-500">
-              {sampleEntities.length} entities identified across{" "}
-              {new Set(sampleEntities.flatMap((e) => e.sourceRefs.map((s) => s.name))).size} sources
-            </p>
-          </div>
-          <span className="border border-neutral-800 px-3 py-1.5 text-[10px] tracking-widest text-neutral-400">
-            CASE ID: {caseCode}
-          </span>
+  useEffect(() => {
+    const row = listRef.current?.querySelector(`[data-entity-id="${CSS.escape(selectedId)}"]`);
+    row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selectedId]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (previewSource || filtered.length === 0) return;
+
+      const currentIndex = filtered.findIndex((e) => e.id === selectedId);
+      if (currentIndex < 0) return;
+
+      if (event.key === "ArrowDown" || event.key === "j") {
+        event.preventDefault();
+        const next = filtered[Math.min(filtered.length - 1, currentIndex + 1)];
+        if (next) setSelectedId(next.id);
+      }
+      if (event.key === "ArrowUp" || event.key === "k") {
+        event.preventDefault();
+        const prev = filtered[Math.max(0, currentIndex - 1)];
+        if (prev) setSelectedId(prev.id);
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filtered, selectedId, previewSource]);
+
+  return (
+    <main className="bg-[#080808] text-neutral-200 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
+      <div className="mx-auto flex w-full max-w-[1500px] flex-1 flex-col px-6 pt-12 pb-6 md:px-10 lg:min-h-0">
+        {/* header */}
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-white">ALL ENTITIES</h1>
+          <p className="mt-2 text-xs text-neutral-500">
+            {sampleEntities.length} entities identified across{" "}
+            {new Set(sampleEntities.flatMap((e) => e.sourceRefs.map((s) => s.name))).size} sources
+          </p>
         </div>
 
         {/* search + filters */}
-        <div className="mt-6 flex flex-wrap items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <div className="flex min-w-[240px] flex-1 items-center gap-2 border border-neutral-800 bg-[#0b0b0b] px-3.5 py-2.5">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b6b6b" strokeWidth="2">
               <circle cx="11" cy="11" r="7" />
@@ -500,13 +532,19 @@ export default function CaseEntitiesPage() {
             />
           </div>
 
-          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as EntityType | "ALL")} className="border border-neutral-800 bg-[#0b0b0b] px-3 py-2.5 text-xs text-neutral-300 outline-none">
-            {typeFilters.map((t) => <option key={t} value={t}>{t === "ALL" ? "All Types" : t.replace("_", " ")}</option>)}
-          </select>
+          <SelectField
+            value={typeFilter}
+            onChange={(value) => setTypeFilter(value as EntityType | "ALL")}
+            options={typeFilters.map((t) => ({ value: t, label: t === "ALL" ? "All Types" : t.replace("_", " ") }))}
+            widthClass="min-w-[150px]"
+          />
 
-          <select value={relevanceFilter} onChange={(e) => setRelevanceFilter(e.target.value as Relevance | "ALL")} className="border border-neutral-800 bg-[#0b0b0b] px-3 py-2.5 text-xs text-neutral-300 outline-none">
-            {relevanceFilters.map((r) => <option key={r} value={r}>{r === "ALL" ? "Relevance: All" : `Relevance: ${r}`}</option>)}
-          </select>
+          <SelectField
+            value={relevanceFilter}
+            onChange={(value) => setRelevanceFilter(value as Relevance | "ALL")}
+            options={relevanceFilters.map((r) => ({ value: r, label: r === "ALL" ? "Relevance: All" : `Relevance: ${r}` }))}
+            widthClass="min-w-[160px]"
+          />
         </div>
 
         <section className="mt-6 border border-neutral-800 bg-[#111] p-6">
@@ -558,44 +596,57 @@ export default function CaseEntitiesPage() {
         {/* master-detail layout */}
         <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.7fr)]">
           {/* LEFT: entity list */}
-          <div className="max-h-[calc(100vh-260px)] overflow-y-auto border border-neutral-800 bg-[#0d0d0d]">
-            {filtered.length === 0 ? (
-              <div className="px-5 py-10 text-center text-xs text-neutral-500">No entities match your filters.</div>
-            ) : (
-              filtered.map((e) => (
-                <button
-                  key={e.id}
-                  onClick={() => setSelectedId(e.id)}
-                  className={`w-full border-b border-neutral-800 px-4 py-4 text-left transition-colors last:border-0 hover:bg-[#131313] ${
-                    selected?.id === e.id ? "bg-[#160c0c] border-l-2 border-l-red-500 pl-[14px]" : ""
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="text-lg">{typeIcon[e.type]}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold text-white truncate">{e.name}</div>
-                      <div className="mt-1 text-[9px] tracking-widest text-neutral-500">{e.type.replace("_", " ")}</div>
-                      <div className={`mt-2 inline-block border px-2 py-0.5 text-[9px] tracking-wide ${relevanceColor[e.relevance]}`}>
-                        {e.relevance} RELEVANCE
-                      </div>
-                      <div className="mt-2 text-[10px] text-neutral-600">
-                        {e.sourceCount} source{e.sourceCount !== 1 ? "s" : ""} · {e.mentionCount} mentions
+          <div className="flex min-h-0 flex-col border border-neutral-800 bg-[#0d0d0d] lg:overflow-hidden">
+            <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-3 py-2.5">
+              <span className="text-[10px] tracking-[0.16em] text-neutral-500">ENTITIES</span>
+              <span className="font-mono text-[10px] text-neutral-400">
+                {filtered.length === sampleEntities.length
+                  ? `${filtered.length} SHOWN`
+                  : `${filtered.length} OF ${sampleEntities.length}`}
+                <span className="ml-2 text-neutral-600">↑↓</span>
+              </span>
+            </div>
+            <div ref={listRef} className="max-h-[420px] overflow-y-auto lg:max-h-none lg:flex-1">
+              {filtered.length === 0 ? (
+                <div className="px-5 py-10 text-center text-xs text-neutral-500">No entities match your filters.</div>
+              ) : (
+                filtered.map((e) => (
+                  <button
+                    key={e.id}
+                    data-entity-id={e.id}
+                    aria-current={selected?.id === e.id ? "true" : undefined}
+                    onClick={() => setSelectedId(e.id)}
+                    className={`w-full border-b border-neutral-800 px-3 py-3.5 text-left transition-colors last:border-0 hover:bg-[#131313] ${
+                      selected?.id === e.id ? "bg-[#160c0c] border-l-2 border-l-red-500 pl-[10px]" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <EntityTypeMark type={e.type} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="truncate text-sm font-semibold text-white">{e.name}</div>
+                          <span className={`shrink-0 text-[9px] tracking-wide ${relevanceColor[e.relevance].split(" ")[0]}`}>
+                            {e.relevance}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 truncate text-[10px] text-neutral-500">
+                          {e.type.replace("_", " ")} · {e.sourceCount} src · {e.mentionCount} mentions
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </button>
-              ))
-            )}
+                  </button>
+                ))
+              )}
+            </div>
           </div>
 
-          {/* RIGHT: entity analysis panel */}
+          {/* RIGHT: sticky header + section tabs */}
           {selected ? (
-            <div className="space-y-5">
-              {/* entity header */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
+            <div className="flex min-h-0 flex-col border border-neutral-800 bg-[#111] lg:overflow-hidden">
+              <section className="shrink-0 border-b border-neutral-800 p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <span className="text-3xl">{typeIcon[selected.type]}</span>
+                    <EntityTypeMark type={selected.type} size="lg" />
                     <div>
                       <h2 className="text-2xl font-bold text-white">{selected.name}</h2>
                       <div className="mt-1 text-[10px] tracking-widest text-neutral-500">{selected.type.replace("_", " ")}</div>
@@ -611,122 +662,145 @@ export default function CaseEntitiesPage() {
                   </div>
                 </div>
 
-                <div className="mt-6 grid grid-cols-3 gap-3">
+                <div className="mt-5 grid grid-cols-3 gap-3">
                   <MiniMetric label="CONFIDENCE" value={`${selected.confidence}%`} />
                   <MiniMetric label="SOURCES" value={String(selected.sourceCount)} />
                   <MiniMetric label="MENTIONS" value={String(selected.mentionCount)} />
                 </div>
               </section>
 
-              {/* AI insight */}
-              <section className="border border-cyan-500/20 bg-[#0d1315] p-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[11px] font-semibold tracking-[0.16em] text-cyan-300">AI INSIGHT</h3>
-                  <span className="text-[9px] tracking-wide text-neutral-500">Generated from {selected.sourceCount} sources</span>
-                </div>
-                <p className="mt-3 text-sm leading-relaxed text-neutral-200">{selected.aiInsight}</p>
-                <div className="mt-4 text-[10px] tracking-wide text-cyan-400">AI CONFIDENCE: {selected.confidence}%</div>
-              </section>
-
-              {/* connections */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
-                <div className="flex items-center justify-between border-b border-neutral-800 pb-4">
-                  <h3 className="text-[11px] font-semibold tracking-[0.16em] text-white">CONNECTIONS</h3>
-                  <button
-                    onClick={() => router.push(`/cases/${caseCode}/network?entity=${selected.id}`)}
-                    className="text-[10px] tracking-widest text-red-400 hover:text-red-300"
-                  >
-                    VIEW IN NETWORK →
-                  </button>
-                </div>
-                <div className="mt-4 space-y-3">
-                  {selected.connections.map((c, i) => (
+              <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-neutral-800 px-3" role="tablist" aria-label="Entity sections">
+                {CASE_SECTIONS.map((item) => {
+                  const active = section === item.id;
+                  return (
                     <button
-                      key={i}
-                      onClick={() => {
-                        const target = sampleEntities.find((e) => e.name === c.name);
-                        if (target) setSelectedId(target.id);
-                      }}
-                      className="flex w-full items-center justify-between border border-neutral-800 bg-[#0d0d0d] px-4 py-3 text-left hover:border-neutral-600"
+                      key={item.id}
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setCaseSection(item.id)}
+                      className={`whitespace-nowrap px-3 py-3 text-[10px] tracking-[0.14em] transition-colors ${
+                        active
+                          ? "border-b-2 border-red-500 text-red-300"
+                          : "border-b-2 border-transparent text-neutral-500 hover:text-neutral-200"
+                      }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="text-base">{typeIcon[c.type]}</span>
-                        <div>
-                          <div className="text-sm text-white">{c.name}</div>
-                          <div className="text-[10px] text-neutral-500">{c.relationship} · {c.type.replace("_", " ")}</div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className={`text-[9px] tracking-wide ${relevanceColor[c.relevance].split(" ")[0]}`}>{c.relevance}</div>
-                        <div className="text-[9px] text-neutral-600 mt-0.5">{c.sources} source{c.sources !== 1 ? "s" : ""}</div>
-                      </div>
+                      {item.label.toUpperCase()}
                     </button>
-                  ))}
-                </div>
-              </section>
+                  );
+                })}
+              </div>
 
-              {/* source references */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
-                <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">SOURCE REFERENCES</h3>
-                <div className="mt-4 space-y-3">
-                  {selected.sourceRefs.map((s, i) => (
-                    <div key={i} className="flex items-center justify-between border border-neutral-800 bg-[#0d0d0d] px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-base">{s.icon}</span>
-                        <div>
-                          <div className="text-sm text-white">{s.name}</div>
-                          <div className="text-[10px] text-neutral-500">{s.meta}</div>
-                        </div>
-                      </div>
+              <div id={section} className="min-h-0 flex-1 overflow-y-auto p-5" role="tabpanel">
+                {section === "ai-insight" && (
+                  <div className="flex h-full min-h-[200px] flex-col border border-cyan-500/20 bg-[#0d1315] p-6">
+                    <h3 className="text-[11px] font-semibold tracking-[0.16em] text-cyan-300">AI INSIGHT</h3>
+                    <p className="mt-4 max-w-2xl text-[15px] leading-7 text-neutral-200">{selected.aiInsight}</p>
+                    <button
+                      onClick={() => setCaseSection("connections")}
+                      className="mt-auto self-start pt-8 text-[10px] tracking-[0.14em] text-neutral-500 hover:text-red-300"
+                    >
+                      REVIEW CONNECTIONS →
+                    </button>
+                  </div>
+                )}
+
+                {section === "connections" && (
+                  <div>
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-[11px] font-semibold tracking-[0.16em] text-white">CONNECTIONS</h3>
                       <button
-                        onClick={() => setPreviewSource(s)}
-                        className="text-[10px] tracking-widest text-red-400 hover:text-red-300 whitespace-nowrap"
+                        onClick={() => router.push(`/cases/${caseCode}/network?entity=${selected.id}`)}
+                        className="text-[10px] tracking-widest text-red-400 hover:text-red-300"
                       >
-                        VIEW SOURCE →
+                        VIEW IN NETWORK →
                       </button>
                     </div>
-                  ))}
-                </div>
-              </section>
+                    <div className="space-y-3">
+                      {selected.connections.map((c, i) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            const target = sampleEntities.find((e) => e.name === c.name);
+                            if (target) setSelectedId(target.id);
+                          }}
+                          className="flex w-full items-center justify-between border border-neutral-800 bg-[#0d0d0d] px-4 py-3 text-left hover:border-neutral-600"
+                        >
+                          <div className="flex items-center gap-3">
+                            <EntityTypeMark type={c.type} size="sm" />
+                            <div>
+                              <div className="text-sm text-white">{c.name}</div>
+                              <div className="text-[10px] text-neutral-500">{c.relationship} · {c.type.replace("_", " ")}</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`text-[9px] tracking-wide ${relevanceColor[c.relevance].split(" ")[0]}`}>{c.relevance}</div>
+                            <div className="mt-0.5 text-[9px] text-neutral-600">{c.sources} source{c.sources !== 1 ? "s" : ""}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-              {/* supporting evidence */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
-                <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">SUPPORTING EVIDENCE</h3>
-                <div className="mt-4 space-y-3">
-                  {selected.evidence.map((ev, i) => {
-                    const key = `${selected.id}-${i}`;
-                    const expanded = expandedEvidence === key;
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => setExpandedEvidence(expanded ? null : key)}
-                        className="w-full border border-neutral-800 bg-[#0d0d0d] px-4 py-3 text-left hover:border-neutral-600"
-                      >
-                        <div className="text-[10px] tracking-widest text-neutral-500">{ev.source}</div>
-                        <p className={`mt-2 text-sm text-neutral-200 ${expanded ? "" : "line-clamp-2"}`}>
-                          &quot;{ev.snippet}&quot;
-                        </p>
-                        {ev.meta && <div className="mt-2 text-[9px] text-neutral-600">{ev.meta}</div>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
+                {section === "source-references" && (
+                  <div className="space-y-3">
+                    {selected.sourceRefs.map((s, i) => (
+                      <div key={i} className="flex items-center justify-between border border-neutral-800 bg-[#0d0d0d] px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-base">{s.icon}</span>
+                          <div>
+                            <div className="text-sm text-white">{s.name}</div>
+                            <div className="text-[10px] text-neutral-500">{s.meta}</div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setPreviewSource(s)}
+                          className="whitespace-nowrap text-[10px] tracking-widest text-red-400 hover:text-red-300"
+                        >
+                          VIEW SOURCE →
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-              {/* metadata */}
-              <section className="border border-neutral-800 bg-[#111] p-6">
-                <h3 className="border-b border-neutral-800 pb-4 text-[11px] font-semibold tracking-[0.16em] text-white">ENTITY METADATA</h3>
-                <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
-                  <MetaRow label="First detected" value={selected.firstDetected} />
-                  <MetaRow label="Last detected" value={selected.lastDetected} />
-                  <MetaRow label="Total mentions" value={String(selected.mentionCount)} />
-                  <MetaRow label="Sources" value={String(selected.sourceCount)} />
-                  <MetaRow label="Entity type" value={selected.type.replace("_", " ")} />
-                </div>
-              </section>
+                {section === "supporting-evidence" && (
+                  <div className="space-y-3">
+                    {selected.evidence.map((ev, i) => {
+                      const key = `${selected.id}-${i}`;
+                      const expanded = expandedEvidence === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => setExpandedEvidence(expanded ? null : key)}
+                          className="w-full border border-neutral-800 bg-[#0d0d0d] px-4 py-3 text-left hover:border-neutral-600"
+                        >
+                          <div className="text-[10px] tracking-widest text-neutral-500">{ev.source}</div>
+                          <p className={`mt-2 text-sm text-neutral-200 ${expanded ? "" : "line-clamp-2"}`}>
+                            &quot;{ev.snippet}&quot;
+                          </p>
+                          {ev.meta && <div className="mt-2 text-[9px] text-neutral-600">{ev.meta}</div>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {section === "entity-metadata" && (
+                  <div className="grid grid-cols-2 gap-4 text-xs">
+                    <MetaRow label="First detected" value={selected.firstDetected} />
+                    <MetaRow label="Last detected" value={selected.lastDetected} />
+                    <MetaRow
+                      label="Verification"
+                      value={selected.verification}
+                      highlight={selected.verification === "VERIFIED" ? "text-emerald-400" : "text-amber-400"}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
-            <div className="flex items-center justify-center border border-neutral-800 bg-[#0d0d0d] py-24 text-center text-sm text-neutral-500">
+            <div className="flex items-center justify-center border border-neutral-800 bg-[#0d0d0d] text-center text-sm text-neutral-500">
               Select an entity to view its intelligence profile.
             </div>
           )}
@@ -750,6 +824,46 @@ export default function CaseEntitiesPage() {
 
       {previewSource && <SourcePreviewDrawer source={previewSource} onClose={() => setPreviewSource(null)} />}
     </main>
+  );
+}
+
+function SelectField({
+  value,
+  onChange,
+  options,
+  widthClass,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  widthClass: string;
+}) {
+  return (
+    <div className={`relative shrink-0 ${widthClass}`}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full appearance-none border border-neutral-700 bg-[#111] py-2.5 pl-3 pr-10 text-xs text-white outline-none [color-scheme:dark]"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <svg
+        className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-white"
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        aria-hidden
+      >
+        <path d="M6 9l6 6 6-6" />
+      </svg>
+    </div>
   );
 }
 
