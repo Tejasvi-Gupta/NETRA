@@ -4,7 +4,7 @@ const SourceSchema = new Schema(
   {
     type: { type: String, enum: ["DOCUMENT", "CSV", "IMAGE", "NOTES", "URL"], required: true },
     title: { type: String, required: true },
-    content: { type: String, required: true }, // URL, text notes, ya file name
+    content: { type: String, required: true },
     uploaded_at: { type: Date, default: Date.now },
   }
 );
@@ -28,6 +28,9 @@ const CaseSchema = new Schema(
     investigation_summary: { type: String, default: "" },
     last_signal_at: { type: Date, default: Date.now },
     sources: [SourceSchema],
+    // AI backend identifiers and cached results
+    ai_case_id: { type: String, default: null },
+    ai_extracted_data: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true }
 );

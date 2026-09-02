@@ -6,6 +6,9 @@ import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 
+import { useEffect } from "react";
+import { checkServerHealth } from "@/lib/aiApi";
+
 const display = Space_Grotesk({ subsets: ["latin"], weight: ["500", "700"] });
 const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500", "700"] });
 
@@ -97,6 +100,10 @@ function GlobePanel() {
 
 export default function LandingPage() {
   const router = useRouter();
+
+  useEffect(() => {
+    void checkServerHealth();
+  }, []);
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden bg-[#0a0505] text-white">
