@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { useParams, usePathname, useRouter } from "next/navigation";
-import { CASE_SECTIONS, isCaseSection, setCaseSection, subscribeCaseSection } from "@/lib/caseSection";
+import { CASE_SECTIONS, isCaseSection, setCaseSection } from "@/lib/caseSection";
 
 type NavItem = {
   id: string;
@@ -44,24 +44,19 @@ export default function CaseSidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { caseCode } = useParams<{ caseCode: string }>();
-  const [activeHash, setActiveHash] = useState("");
 
   const analysisPath = analysisPathFor(pathname, caseCode);
   const onAnalysisPage =
     pathname === `/cases/${caseCode}` || pathname === `/cases/${caseCode}/entities`;
 
-  useEffect(() => {
-    if (!onAnalysisPage) {
-      setActiveHash("");
-      return;
+  const activeHash = useMemo(() => {
+    if (!onAnalysisPage || typeof window === "undefined") {
+      return "";
     }
 
-    const apply = (id: string) => {
-      setActiveHash(isCaseSection(id) ? id : "");
-    };
-    apply(window.location.hash.replace("#", ""));
-    return subscribeCaseSection(apply);
-  }, [onAnalysisPage, pathname]);
+    const hash = window.location.hash.replace("#", "");
+    return isCaseSection(hash) ? hash : "";
+  }, [onAnalysisPage]);
 
   function goTo(item: NavItem) {
     const href = item.href(caseCode, analysisPath);

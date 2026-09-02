@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import type { Case, TimelineEvent } from "@/types/netra";
 
 export default function CaseTimelinePage() {
@@ -16,22 +15,15 @@ export default function CaseTimelinePage() {
 
   useEffect(() => {
     async function load() {
-      const { data: caseData, error: caseError } = await supabase.from("cases").select("*").eq("case_code", caseCode).single();
-      if (caseError || !caseData) {
-        setError(caseError?.message ?? "Case not found.");
+      const response = await fetch(`/api/cases/${caseCode}`);
+      const payload = await response.json();
+      if (!response.ok || !payload.success || !payload.case) {
+        setError(payload.error ?? "Case not found.");
         setLoading(false);
         return;
       }
-      setCaseRecord(caseData);
-
-      const { data, error: eventsError } = await supabase
-        .from("timeline_events")
-        .select("*")
-        .eq("case_id", caseData.id)
-        .order("event_date", { ascending: true });
-
-      if (eventsError) setError(eventsError.message);
-      else setEvents(data ?? []);
+      setCaseRecord(payload.case as Case);
+      setEvents([]);
       setLoading(false);
     }
     if (caseCode) void load();

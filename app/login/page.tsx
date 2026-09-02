@@ -1,179 +1,146 @@
-// app/login/page.tsx
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
-import { login, verifyCredentials } from "@/lib/auth";
 
-const display = Space_Grotesk({ subsets: ["latin"], weight: ["500", "700"] });
-const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500", "700"] });
-
-function Background() {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(ellipse 80% 60% at 70% 30%, rgba(220,38,38,0.16), transparent 60%), radial-gradient(ellipse 60% 50% at 15% 85%, rgba(185,28,28,0.12), transparent 65%), linear-gradient(180deg, #0a0505 0%, #0d0606 50%, #0a0505 100%)",
-        }}
-      />
-      <div
-        className="absolute inset-0 opacity-[0.12]"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(248,113,113,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(248,113,113,0.5) 1px, transparent 1px)",
-          backgroundSize: "64px 64px",
-          maskImage: "radial-gradient(ellipse 70% 65% at 50% 45%, black 15%, transparent 75%)",
-          WebkitMaskImage: "radial-gradient(ellipse 70% 65% at 50% 45%, black 15%, transparent 75%)",
-        }}
-      />
-      <div className="absolute right-[8%] top-1/3 h-[550px] w-[550px] rounded-full bg-red-600/10 blur-[140px]" />
-      <div className="absolute left-[5%] bottom-0 h-[320px] w-[320px] rounded-full bg-red-500/[0.06] blur-[120px]" />
-      <div
-        className="absolute inset-0 opacity-[0.04]"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(to bottom, rgba(255,255,255,0.6) 0px, transparent 1px, transparent 3px)",
-        }}
-      />
-      <svg className="absolute inset-0 h-full w-full opacity-[0.03] mix-blend-overlay">
-        <filter id="noiseFilter">
-          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" />
-        </filter>
-        <rect width="100%" height="100%" filter="url(#noiseFilter)" />
-      </svg>
-    </div>
-  );
-}
+const roles = [
+  {
+    key: "admin",
+    tag: "ADMIN",
+    title: "ADMIN",
+    desc: "Global oversight and case governance",
+    operatorId: "netra-admin",
+    accessKey: "netra@2026",
+    accent: "#ef4444",
+  },
+  {
+    key: "investigator",
+    tag: "INVESTIGATOR",
+    title: "INVESTIGATOR",
+    desc: "Field intelligence and evidence review",
+    operatorId: "netra-investigator",
+    accessKey: "investigator@2026",
+    accent: "#f97316",
+  },
+];
 
 export default function LoginPage() {
   const router = useRouter();
-  const [operatorId, setOperatorId] = useState("");
-  const [accessKey, setAccessKey] = useState("");
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loadingRole, setLoadingRole] = useState<string | null>(null);
 
-  const handleAuthenticate = () => {
-    if (loading) return;
-    setError(false);
-    setLoading(true);
-
-    // simulated auth check — swap this for a real API/NextAuth call
+  function handleLogin(roleKey: string) {
+    setLoadingRole(roleKey);
+    localStorage.setItem("netra_role", roleKey);
     setTimeout(() => {
-      if (verifyCredentials(operatorId, accessKey)) {
-        login(operatorId.trim(), accessKey);
-        router.push("/dashboard");
-      } else {
-        setError(true);
-        setLoading(false);
-      }
-    }, 600);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleAuthenticate();
-  };
+      router.push(roleKey === "admin" ? "/admin/dashboard" : "/investigator/dashboard");
+    }, 650);
+  }
 
   return (
-    <main className="relative min-h-screen w-full overflow-hidden bg-[#0a0505] text-white">
-      <Background />
+    <div className="relative min-h-screen overflow-hidden bg-[#050505] font-mono text-neutral-200">
+      {/* animated grid */}
+      <div className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{
+        backgroundImage: "linear-gradient(rgba(239,68,68,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(239,68,68,0.5) 1px, transparent 1px)",
+        backgroundSize: "44px 44px",
+        maskImage: "radial-gradient(ellipse 80% 80% at 30% 20%, black 20%, transparent 75%)",
+      }} />
 
-      <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-6 py-16">
-        <div className="w-full max-w-[540px]">
-          <motion.a
-            href="/"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className={`${mono.className} mb-16 inline-flex items-center gap-2 text-xs tracking-widest text-neutral-500 transition-colors hover:text-neutral-300`}
-          >
-            ← RETURN TO NETRA
-          </motion.a>
+      {/* animated glow orb */}
+      <div className="pointer-events-none absolute -left-40 -top-40 h-[600px] w-[600px] rounded-full bg-red-600/10 blur-[120px] animate-[pulse_6s_ease-in-out_infinite]" />
+      <div className="pointer-events-none absolute -bottom-40 right-0 h-[500px] w-[500px] rounded-full bg-orange-600/10 blur-[120px] animate-[pulse_8s_ease-in-out_infinite]" />
 
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-            className="mb-10"
-          >
-            <h1 className={`${display.className} flex items-end text-[64px] font-bold leading-none tracking-tight`}>
-              NETRA
-              <span className="mb-1 ml-1 h-3 w-3 rounded-full bg-red-500" />
-            </h1>
-            <p className={`${mono.className} mt-4 text-xs tracking-[0.25em] text-neutral-500`}>
-              SECURE ACCESS / CLEARANCE REQUIRED
-            </p>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="space-y-6"
-          >
-            <div>
-              <label className={`${mono.className} mb-2 block text-[11px] tracking-widest text-neutral-500`}>
-                OPERATOR ID
-              </label>
-              <input
-                type="text"
-                value={operatorId}
-                onChange={(e) => setOperatorId(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Enter operator ID"
-                autoComplete="off"
-                className={`${mono.className} w-full border border-white/10 bg-white/[0.02] px-4 py-3.5 text-sm text-neutral-200 placeholder:text-neutral-600 outline-none transition-colors focus:border-red-500/50 focus:bg-white/[0.04]`}
-              />
-            </div>
-
-            <div>
-              <label className={`${mono.className} mb-2 block text-[11px] tracking-widest text-neutral-500`}>
-                ACCESS KEY
-              </label>
-              <input
-                type="password"
-                value={accessKey}
-                onChange={(e) => setAccessKey(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Enter access key"
-                autoComplete="off"
-                className={`${mono.className} w-full border border-white/10 bg-white/[0.02] px-4 py-3.5 text-sm text-neutral-200 placeholder:text-neutral-600 outline-none transition-colors focus:border-red-500/50 focus:bg-white/[0.04]`}
-              />
-            </div>
-
-            <AnimatePresence>
-              {error && (
-                <motion.p
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className={`${mono.className} text-xs tracking-widest text-red-400`}
-                >
-                  ACCESS DENIED — INVALID CREDENTIALS
-                </motion.p>
-              )}
-            </AnimatePresence>
-
-            <motion.button
-              onClick={handleAuthenticate}
-              disabled={loading}
-              whileTap={{ scale: 0.98 }}
-              className={`${mono.className} group relative mt-4 flex w-full items-center justify-between overflow-hidden bg-red-600 px-8 py-4 text-sm font-bold tracking-widest transition-colors hover:bg-red-500 disabled:opacity-60`}
-            >
-              <span className="relative z-10">
-                {loading ? "AUTHENTICATING..." : "AUTHENTICATE"}
-              </span>
-              <span className="relative z-10 transition-transform group-hover:translate-x-1 group-hover:-translate-y-1">
-                ↗
-              </span>
-              <span className="absolute inset-0 -translate-x-full bg-white/20 transition-transform duration-500 group-hover:translate-x-0" />
-            </motion.button>
-          </motion.div>
-        </div>
+      {/* scanline sweep */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-0 h-px w-full bg-gradient-to-r from-transparent via-red-500/40 to-transparent animate-[scan_5s_linear_infinite]" />
       </div>
-    </main>
+
+      <div className="relative z-10 mx-auto max-w-5xl px-8 py-14 md:py-20">
+        <Link href="/" className="inline-flex items-center gap-2 text-[11px] tracking-[0.2em] text-neutral-500 hover:text-red-400 transition-colors">
+          ← RETURN TO NETRA
+        </Link>
+
+        <div className="mt-10 opacity-0 animate-[fadeUp_0.7s_ease-out_0.1s_forwards]">
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-6xl md:text-7xl font-black tracking-tight text-white">NETRA</h1>
+            <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse" />
+          </div>
+          <p className="mt-3 text-[12px] tracking-[0.3em] text-neutral-500">SECURE ACCESS / SELECT ROLE</p>
+        </div>
+
+        <div className="mt-14 grid gap-6 md:grid-cols-2">
+          {roles.map((r, i) => (
+            <div
+              key={r.key}
+              className="group relative overflow-hidden border border-white/10 bg-white/[0.02] p-8 opacity-0 backdrop-blur-sm transition-all duration-300 hover:border-white/25 hover:bg-white/[0.04]"
+              style={{
+                animation: `fadeUp 0.7s ease-out ${0.25 + i * 0.15}s forwards`,
+              }}
+            >
+              {/* accent glow on hover */}
+              <div
+                className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-20"
+                style={{ background: r.accent }}
+              />
+
+              <span
+                className="inline-block rounded-full px-3 py-1 text-[10px] font-bold tracking-wider text-white"
+                style={{ backgroundColor: r.accent }}
+              >
+                {r.tag}
+              </span>
+
+              <h2 className="mt-5 text-3xl font-black tracking-tight text-white">{r.title}</h2>
+              <p className="mt-2 text-[12px] text-neutral-500">{r.desc}</p>
+
+              <div className="mt-6 h-px w-full bg-white/10" />
+
+              <div className="mt-5 space-y-2.5 text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-neutral-500">Operator ID</span>
+                  <span className="font-semibold text-neutral-200">{r.operatorId}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-neutral-500">Access Key</span>
+                  <span className="font-semibold text-neutral-200">{r.accessKey}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => handleLogin(r.key)}
+                disabled={loadingRole !== null}
+                className="mt-7 flex items-center gap-2 text-[12px] font-bold tracking-widest transition-all disabled:opacity-40"
+                style={{ color: r.accent }}
+              >
+                {loadingRole === r.key ? (
+                  <>AUTHENTICATING <span className="inline-block h-2 w-2 animate-ping rounded-full" style={{ backgroundColor: r.accent }} /></>
+                ) : (
+                  <>LOGIN →</>
+                )}
+              </button>
+
+              {/* bottom border sweep on hover */}
+              <div
+                className="absolute bottom-0 left-0 h-[2px] w-0 transition-all duration-500 group-hover:w-full"
+                style={{ backgroundColor: r.accent }}
+              />
+            </div>
+          ))}
+        </div>
+
+      
+      </div>
+
+      <style jsx global>{`
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes scan {
+          0% { top: 0%; }
+          100% { top: 100%; }
+        }
+      `}</style>
+    </div>
   );
 }

@@ -1,7 +1,7 @@
 export type CasePriority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export type CaseStatus = "ACTIVE" | "UNDER_REVIEW" | "CLOSED";
 export type SourceCategory = "DOCUMENTS" | "CSV_EXCEL" | "IMAGES" | "TEXT_NOTES" | "URL_SOURCES";
-export type EntityType = "PERSON" | "ORGANIZATION" | "VEHICLE" | "LOCATION" | "PHONE" | "BANK_ACCOUNT";
+export type EntityType = "PERSON" | "ORGANIZATION" | "VEHICLE" | "LOCATION" | "PHONE" | "BANK_ACCOUNT" | "OTHER";
 export type RiskLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "MEDIUM_HIGH" | "LOW" | "WITNESS";
 
 export interface Case {
@@ -105,4 +105,59 @@ export interface FinancialTransaction {
   label: string;
   significance: string;
   transaction_date: string;
+}
+
+// ── Add these to your existing src/types/netra.ts ──
+// (Keep your existing Case / Evidence / Source types as-is, just append below)
+
+export type Relevance = "HIGH" | "MEDIUM" | "LOW";
+
+// Raw row shapes — match the Supabase table columns exactly
+export interface DbEntity {
+  id: string;
+  case_id: string;
+  name: string;
+  type: EntityType;
+  relevance: Relevance;
+  confidence: number;
+  source_count: number;
+  mention_count: number;
+  ai_insight: string | null;
+  verification: "VERIFIED" | "UNVERIFIED";
+  first_detected: string | null;
+  last_detected: string | null;
+  created_at: string;
+}
+
+export interface DbEntityConnection {
+  id: string;
+  case_id: string;
+  source_entity_id: string;
+  target_entity_id: string;
+  relationship: string;
+  relevance: Relevance;
+  confidence: number;
+  source_count: number;
+  evidence_note: string | null;
+  created_at: string;
+}
+
+export interface DbEntitySourceRef {
+  id: string;
+  entity_id: string;
+  source_id: string | null;
+  name: string;
+  icon: string | null;
+  meta: string | null;
+  added_date: string | null;
+  created_at: string;
+}
+
+export interface DbEntityEvidence {
+  id: string;
+  entity_id: string;
+  source_name: string;
+  snippet: string;
+  meta: string | null;
+  created_at: string;
 }

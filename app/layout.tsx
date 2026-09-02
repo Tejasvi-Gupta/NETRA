@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import "./globals.css";
 import { Anton } from "next/font/google";
 
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
   description: "AI-Criminal Intelligence platform",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"

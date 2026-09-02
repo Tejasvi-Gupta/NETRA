@@ -58,7 +58,7 @@ export default function AdminCaseView() {
         </div>
         <div className="text-right">
           <div className="text-xs text-neutral-500">ASSIGNED INVESTIGATOR</div>
-          <div className="text-sm font-bold text-white mt-1">{caseData.assigned_investigator}</div>
+          <div className="text-sm font-bold text-white mt-1">{caseData.assigned_investigator || "Netra Investigator"}</div>
           <span className="inline-block mt-2 text-xs px-2.5 py-0.5 bg-red-500/10 border border-red-500/30 text-red-400">
             {caseData.status}
           </span>
@@ -83,94 +83,61 @@ export default function AdminCaseView() {
               >
                 <span className="text-[9px] px-2 py-0.5 bg-red-500/10 text-red-400 font-bold">{s.type}</span>
                 <div className="text-xs font-bold text-white mt-2 truncate">{s.title}</div>
-                <div className="text-[10px] text-neutral-500 mt-1">Click to open & review ↗</div>
+                <div className="text-[10px] text-neutral-500 mt-1">Click to view ↗</div>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* CRASH-PROOF PREVIEW MODAL */}
       {previewSource && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
-          <div className="flex h-[85vh] w-full max-w-4xl flex-col border border-white/20 bg-[#0c0c0d] shadow-2xl">
+          <div className="flex h-[80vh] w-full max-w-3xl flex-col border border-white/20 bg-[#0c0c0d] shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
               <div className="flex items-center gap-3">
                 <span className="bg-red-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-red-400">
                   {previewSource.type}
                 </span>
-                <h3 className="max-w-md truncate text-sm font-bold text-white">
-                  {previewSource.title}
-                </h3>
+                <h3 className="max-w-md truncate text-sm font-bold text-white">{previewSource.title}</h3>
               </div>
-
-              <div className="flex items-center gap-3">
-                {previewSource.content.startsWith("data:") && (
-                  <a
-                    href={previewSource.content}
-                    download={previewSource.title}
-                    className="border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-neutral-300 hover:border-white/30 hover:text-white transition-all"
-                  >
-                    DOWNLOAD FILE ⤓
-                  </a>
-                )}
-                <button
-                  onClick={() => setPreviewSource(null)}
-                  className="px-2 text-sm text-neutral-500 hover:text-white"
-                >
-                  ✕
-                </button>
-              </div>
+              <button onClick={() => setPreviewSource(null)} className="px-2 text-sm text-neutral-500 hover:text-white">✕</button>
             </div>
 
-            <div className="flex-1 overflow-hidden bg-[#050505] p-4 flex items-center justify-center">
-              {/* IMAGE */}
+            <div className="flex-1 overflow-hidden bg-[#050505] p-6 flex items-center justify-center">
+              {/* IMAGE PREVIEW */}
               {previewSource.type === "IMAGE" && (
                 <div className="flex h-full w-full items-center justify-center">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewSource.content}
-                    alt={previewSource.title}
-                    className="max-h-full max-w-full rounded border border-white/5 object-contain"
-                  />
+                  <img src={previewSource.content} alt={previewSource.title} className="max-h-full max-w-full object-contain" />
                 </div>
               )}
 
-              {/* PDF */}
-              {previewSource.title.toLowerCase().endsWith(".pdf") && previewSource.content.startsWith("data:") && (
-                <iframe
-                  src={previewSource.content}
-                  title={previewSource.title}
-                  className="h-full w-full rounded border-none"
-                />
+              {/* TEXT NOTES & URLS PREVIEW */}
+              {(previewSource.type === "NOTES" || previewSource.type === "URL") && (
+                <div className="h-full w-full overflow-y-auto p-4 font-mono text-xs text-neutral-300 whitespace-pre-wrap leading-relaxed">
+                  {previewSource.content}
+                </div>
               )}
 
-              {/* WORD / EXCEL CRASH PROTECTION */}
-              {(previewSource.title.toLowerCase().endsWith(".docx") || previewSource.title.toLowerCase().endsWith(".xlsx")) && (
+              {/* DOCUMENTS & CSVs: SAFE CARD WITH DOWNLOAD */}
+              {previewSource.type !== "IMAGE" && previewSource.type !== "NOTES" && previewSource.type !== "URL" && (
                 <div className="flex flex-col items-center justify-center text-center p-8 border border-white/10 bg-white/[0.01] rounded max-w-md">
-                  <div className="text-3xl mb-3">📄</div>
-                  <h4 className="text-sm font-bold text-white mb-1">{previewSource.title}</h4>
+                  <div className="text-4xl mb-3">📁</div>
+                  <h4 className="text-sm font-bold text-white mb-2">{previewSource.title}</h4>
                   <p className="text-xs text-neutral-400 mb-6">
-                    Word and Excel documents are binary formats requiring external software to open.
+                    File attached by investigator. Download to inspect the full contents.
                   </p>
                   {previewSource.content.startsWith("data:") ? (
                     <a
                       href={previewSource.content}
                       download={previewSource.title}
-                      className="bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-5 py-2.5 rounded transition-all"
+                      className="bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-6 py-3 transition-colors"
                     >
-                      DOWNLOAD & OPEN FILE ⤓
+                      DOWNLOAD FILE ⤓
                     </a>
                   ) : (
-                    <span className="text-xs text-red-400">File format invalid. Re-upload using the file picker.</span>
+                    <span className="text-xs text-red-400">Invalid file data.</span>
                   )}
-                </div>
-              )}
-
-              {/* NOTES / URL / PLAIN TEXT */}
-              {(previewSource.type === "NOTES" || previewSource.type === "URL" || (!previewSource.content.startsWith("data:") && !previewSource.title.endsWith(".docx"))) && (
-                <div className="h-full w-full overflow-y-auto p-6 font-mono text-xs text-neutral-300 leading-relaxed whitespace-pre-wrap selection:bg-red-500/30">
-                  {previewSource.content}
                 </div>
               )}
             </div>
