@@ -108,51 +108,51 @@ export default function ForensicDossierPrint({
       {/* Header Banner */}
       <div className="border-b-2 border-black pb-4">
         <div className="flex justify-between items-center text-xs text-neutral-600 font-bold uppercase tracking-widest">
-          <span>CENTRAL FORENSIC & INTELLIGENCE DIVISION</span>
-          <span>STRICTLY CONFIDENTIAL // LAW ENFORCEMENT ONLY</span>
+          <span>NETRA Case Report</span>
+          <span>Confidential — law enforcement only</span>
         </div>
-        <h1 className="text-2xl font-black uppercase mt-2 tracking-tight">
-          CASE DOSSIER: {caseData.title}
+        <h1 className="mt-2 text-2xl font-bold tracking-tight">
+          {caseData.title}
         </h1>
-        <div className="flex justify-between items-center text-xs mt-2 pt-2 border-t border-neutral-300">
-          <span>CASE CODE: <strong>{caseData.case_code}</strong></span>
-          <span>STATUS: <strong>{caseData.status}</strong></span>
-          <span>GENERATED ON: <strong>{new Date().toLocaleString("en-GB")}</strong></span>
+        <div className="mt-2 flex items-center justify-between border-t border-neutral-300 pt-2 text-xs">
+          <span>Case: <strong>{caseData.case_code}</strong></span>
+          <span>Status: <strong>{caseData.status.replace(/[_-]+/g, " ")}</strong></span>
+          <span>Generated: <strong>{new Date().toLocaleString("en-GB")}</strong></span>
         </div>
       </div>
 
       {/* 1. Investigation Summary */}
       <div>
         <h2 className="text-xs font-bold uppercase bg-neutral-100 p-1.5 border-l-4 border-black mb-2">
-          1. CASE SUMMARY & EXECUTIVE BRIEF
+          1. Case summary
         </h2>
         <p className="text-xs leading-relaxed text-neutral-800">
-          {caseData.investigation_summary || "No specific preliminary narrative registered."}
+          {caseData.investigation_summary || "No summary provided."}
         </p>
       </div>
 
       {/* 2. Identified Persons */}
       <div>
         <h2 className="text-xs font-bold uppercase bg-neutral-100 p-1.5 border-l-4 border-black mb-2">
-          2. IDENTIFIED SUSPECTS & PERSONS ({persons.length})
+          2. People ({persons.length})
         </h2>
         {persons.length === 0 ? (
-          <p className="text-xs text-neutral-500 italic">No formal profiles identified.</p>
+          <p className="text-xs italic text-neutral-500">No people identified yet.</p>
         ) : (
           <table className="w-full text-left text-xs border border-black border-collapse">
             <thead>
               <tr className="bg-neutral-200 border-b border-black">
-                <th className="p-1.5 border-r border-black">Name / Identity</th>
-                <th className="p-1.5 border-r border-black">Designated Role</th>
-                <th className="p-1.5 border-r border-black">Contact Numbers</th>
-                <th className="p-1.5">Known Locations / Addresses</th>
+                <th className="border-r border-black p-1.5">Name</th>
+                <th className="border-r border-black p-1.5">Role</th>
+                <th className="border-r border-black p-1.5">Phone</th>
+                <th className="p-1.5">Address</th>
               </tr>
             </thead>
             <tbody>
               {persons.map((item, i) => {
                 const p = item.person || item;
                 const name = p.identity?.name || p.name || "Unnamed";
-                const role = (item.roles && item.roles[0]) || p.role || "PERSON OF INTEREST";
+                const role = ((item.roles && item.roles[0]) || p.role || "Person of interest").replace(/[_-]+/g, " ");
                 const phone = p.contact?.phones?.join(", ") || p.phone || "—";
                 const address = p.addresses?.map((a) => a.text).join("; ") || "—";
                 const aliases = p.identity?.aliases?.join(", ");
@@ -160,9 +160,9 @@ export default function ForensicDossierPrint({
                 return (
                   <tr key={i} className="border-b border-neutral-300">
                     <td className="p-1.5 border-r border-neutral-300 font-bold">
-                      {name} {aliases && <span className="text-[10px] block font-normal text-neutral-600">aka {aliases}</span>}
+                      {name} {aliases && <span className="block text-[10px] font-normal text-neutral-600">Also known as {aliases}</span>}
                     </td>
-                    <td className="p-1.5 border-r border-neutral-300 uppercase">{role}</td>
+                    <td className="border-r border-neutral-300 p-1.5">{role}</td>
                     <td className="p-1.5 border-r border-neutral-300">{phone}</td>
                     <td className="p-1.5">{address}</td>
                   </tr>
@@ -177,16 +177,16 @@ export default function ForensicDossierPrint({
       {unknowns.length > 0 && (
         <div>
           <h2 className="text-xs font-bold uppercase bg-neutral-100 p-1.5 border-l-4 border-black mb-2">
-            3. UNIDENTIFIED HANDLERS & SHADOW ENTITIES ({unknowns.length})
+            3. Unknown identities ({unknowns.length})
           </h2>
           <div className="grid grid-cols-2 gap-3 text-xs">
             {unknowns.map((u, idx) => (
               <div key={idx} className="border border-neutral-400 p-2 bg-neutral-50">
                 <div className="font-bold flex justify-between">
-                  <span>🎭 {u.label || u.alias || "Unknown Node"}</span>
-                  <span className="text-[10px] border border-black px-1 uppercase">{u.status || "UNVERIFIED"}</span>
+                  <span>{u.label || u.alias || "Unknown person"}</span>
+                  <span className="border border-black px-1 text-[10px]">{(u.status || "Unidentified").replace(/[_-]+/g, " ")}</span>
                 </div>
-                <p className="text-[11px] mt-1 text-neutral-700">{u.description || "Unidentified accomplice."}</p>
+                <p className="mt-1 text-[11px] text-neutral-700">{u.description || "Identity is not confirmed yet."}</p>
               </div>
             ))}
           </div>
@@ -196,16 +196,16 @@ export default function ForensicDossierPrint({
       {/* 4. Incident Progression Timeline */}
       <div>
         <h2 className="text-xs font-bold uppercase bg-neutral-100 p-1.5 border-l-4 border-black mb-2">
-          4. CHRONOLOGICAL EVENT LOG ({incidents.length})
+          4. Timeline ({incidents.length})
         </h2>
         {incidents.length === 0 ? (
-          <p className="text-xs text-neutral-500 italic">No temporal incident points recorded.</p>
+          <p className="text-xs italic text-neutral-500">No incidents recorded yet.</p>
         ) : (
           <div className="space-y-3">
             {incidents.map((inc, idx) => (
               <div key={idx} className="border-l-2 border-black pl-3 text-xs">
                 <div className="font-bold uppercase text-[11px]">
-                  {inc.time?.start ? `[${inc.time.start}]` : `EVENT #${idx + 1}`} — {inc.title || "Incident Report"}
+                  {inc.time?.start ? inc.time.start : `Event ${idx + 1}`} — {inc.title || "Incident"}
                 </div>
                 <p className="text-neutral-800 mt-0.5">{inc.description || inc.summary}</p>
                 {inc.key_points && inc.key_points.length > 0 && (
@@ -224,7 +224,7 @@ export default function ForensicDossierPrint({
       {/* 5. Targeted Relations & Evidence */}
       <div>
         <h2 className="text-xs font-bold uppercase bg-neutral-100 p-1.5 border-l-4 border-black mb-2">
-          5. TARGETED COLLUSION & EVIDENCE LINKS ({relations.length})
+          5. Relationships ({relations.length})
         </h2>
         <div className="space-y-2">
           {relations.map((rel, idx) => {
@@ -236,7 +236,7 @@ export default function ForensicDossierPrint({
                 <div className="font-bold flex justify-between items-center">
                   <span>{fName}</span>
                   <span className="font-black text-[10px] px-2 py-0.5 bg-neutral-200 border border-neutral-400">
-                    ──[{rel.type || "LINKED_TO"}]──▶
+                    {(rel.type || "Linked to").replace(/[_-]+/g, " ")}
                   </span>
                   <span>{tName}</span>
                 </div>
@@ -255,7 +255,7 @@ export default function ForensicDossierPrint({
       {graphNodes.length > 0 && (
         <div className="break-before-page pt-4">
           <h2 className="text-xs font-bold uppercase bg-neutral-100 p-1.5 border-l-4 border-black mb-2">
-            6. VISUAL LINK ANALYSIS MAP
+            6. Network map
           </h2>
           <div className="border border-black p-4 flex justify-center bg-white">
             <svg viewBox="0 0 700 350" className="w-full h-[320px]">

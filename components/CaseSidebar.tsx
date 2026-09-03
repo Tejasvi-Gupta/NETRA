@@ -110,7 +110,7 @@ export default function CaseSidebar() {
       <div className="flex h-full flex-col px-4 pt-12 pb-5 lg:px-5">
         <div className="flex flex-wrap items-center gap-x-2 text-[10px] tracking-[0.16em] text-neutral-500">
           <button onClick={() => router.push("/dashboard")} className="hover:text-red-400">
-            ← DASHBOARD
+            ← Intelligence Workspace
           </button>
           <span className="text-neutral-700">/</span>
           <button onClick={() => router.push("/cases")} className="hover:text-red-400">

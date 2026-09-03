@@ -115,6 +115,11 @@ interface NexusMatch {
 
 type ActiveTab = "sources" | "persons" | "unknowns" | "incidents" | "relations" | "graph";
 
+function humanize(value?: string | null, fallback = "") {
+  if (!value) return fallback;
+  return value.replace(/[_-]+/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export default function CaseWorkspace() {
   const { caseCode } = useParams();
   const router = useRouter();
@@ -190,7 +195,7 @@ export default function CaseWorkspace() {
         setRelEvidence("");
         await fetchCase();
       } else {
-        alert(data.error || "Failed to create relation link.");
+        alert(data.error || "Could not save that connection.");
       }
     } catch (error) {
       console.error("Failed to link relations:", error);
@@ -257,7 +262,7 @@ export default function CaseWorkspace() {
   // Handle Run Analysis Action
   const handleRunAnalysis = async () => {
     if (!caseData?.ai_case_id) {
-      alert("No AI Case ID linked to this case.");
+      alert("This case is not linked to analysis yet.");
       return;
     }
     setAnalyzing(true);
@@ -273,10 +278,10 @@ export default function CaseWorkspace() {
         void logActivity("Triggered live graph analysis & inference engine");
         await fetchCase();
       } else {
-        alert(`Analysis Error: ${data.error || data.detail || "Failed"}`);
+        alert(data.error || data.detail || "Analysis failed. Please try again.");
       }
     } catch {
-      alert("Failed to trigger analysis.");
+      alert("Could not start analysis. Please try again.");
     } finally {
       setAnalyzing(false);
     }
@@ -410,15 +415,15 @@ export default function CaseWorkspace() {
       });
 
       if (res.ok) {
-        alert("Interrogation intel submitted successfully!");
+        alert("Interview notes added.");
         void logActivity("Submitted interrogation statement intel for AI linking");
         setNotesText("");
         if (caseData?.ai_case_id) syncAiData(caseData.ai_case_id);
       } else {
-        alert("Submission failed.");
+        alert("Could not add those notes. Please try again.");
       }
     } catch {
-      alert("Network error.");
+      alert("Could not add those notes. Please try again.");
     } finally {
       setIsSubmittingNotes(false);
     }
@@ -466,7 +471,7 @@ export default function CaseWorkspace() {
     void checkNexus();
   }, [caseData?.case_code, personsList]);
 
-  if (!caseData) return <div className="p-8 text-neutral-500 font-mono">Loading workspace...</div>;
+  if (!caseData) return <div className="p-8 text-[14px] text-neutral-500">Loading case…</div>;
 
   const getEntityName = (id: string) => {
     const found = personsList.find(
@@ -518,37 +523,37 @@ export default function CaseWorkspace() {
 
   return (
     <>
-      <div className="min-h-screen bg-[#050505] text-neutral-200 font-mono p-8 max-w-295 mx-auto print:hidden">
+      <div className="mx-auto min-h-screen max-w-295 bg-[#050505] p-8 text-neutral-200 print:hidden">
       <input type="file" ref={docInputRef} onChange={(e) => handleFileUpload(e, "DOCUMENT")} accept=".pdf" className="hidden" />
       <input type="file" ref={csvInputRef} onChange={(e) => handleFileUpload(e, "CSV")} accept=".csv,.xlsx" className="hidden" />
       <input type="file" ref={imgInputRef} onChange={(e) => handleFileUpload(e, "IMAGE")} accept="image/*" className="hidden" />
 
       <button onClick={() => router.push("/investigator/dashboard")} className="text-xs text-neutral-500 hover:text-white mb-4">
-        ← DASHBOARD
-      </button>
+        ← Intelligence Workspace
+        </button>
 
       {nexusMatches.length > 0 && (
         <div className="mb-6 border border-red-500/50 bg-red-950/25 p-4 rounded text-xs font-mono">
-          <div className="flex items-center gap-2 text-red-400 font-bold tracking-wider uppercase mb-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-ping" />
-            🚨 CROSS-CASE NEXUS ALERT: {nexusMatches.length} LINK(S) DETECTED
+          <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-red-300">
+            <span className="h-2.5 w-2.5 animate-ping rounded-full bg-red-500" />
+            Possible link to {nexusMatches.length} other {nexusMatches.length === 1 ? "case" : "cases"}
           </div>
-          <p className="text-zinc-400 text-[11px] mb-3">
-            The intelligence engine detected suspects in this case connected to other active FIRs.
+          <p className="mb-3 text-[13px] text-zinc-400">
+            Someone in this case also appears in another open FIR.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {nexusMatches.map((match, index) => (
               <div key={index} className="p-2.5 bg-black/60 border border-red-900/40 rounded flex flex-col gap-1">
                 <div className="flex justify-between items-center">
                   <span className="text-white font-bold">{match.suspectName}</span>
-                  <span className="text-[9px] px-1.5 py-0.5 bg-red-500/20 text-red-300 uppercase rounded">
-                    MATCH VIA {match.matchType}
+                  <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[11px] text-red-200">
+                    Matched by {humanize(match.matchType)}
                   </span>
-                </div>
-                <span className="text-[10px] text-zinc-500">
-                  Linked to: <strong className="text-red-400">{match.matchedCaseCode}</strong> ({match.matchedCaseTitle})
-                </span>
-              </div>
+          </div>
+                <span className="text-[12px] text-zinc-500">
+                  Also in <strong className="text-red-400">{match.matchedCaseCode}</strong> ({match.matchedCaseTitle})
+          </span>
+        </div>
             ))}
           </div>
         </div>
@@ -562,40 +567,42 @@ export default function CaseWorkspace() {
         </div>
         <div className="text-right flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-xs px-2.5 py-1 bg-orange-500/10 border border-orange-500/30 text-orange-400">
-              {caseData.status}
+            <span className="border border-orange-500/30 bg-orange-500/10 px-2.5 py-1 text-[13px] text-orange-300">
+              {humanize(caseData.status, caseData.status)}
             </span>
-            <button
+                <button
               onClick={() => setIsChatOpen(true)}
-              className="text-xs bg-zinc-900 border border-orange-500/40 text-orange-400 px-3 py-1 rounded hover:bg-orange-500 hover:text-black transition"
+              className="rounded border border-orange-500/40 bg-zinc-900 px-3 py-1 text-[13px] text-orange-300 transition hover:bg-orange-500 hover:text-black"
             >
-              OPEN AI COPILOT
+              Ask copilot
             </button>
             <button
               onClick={handleRunAnalysis}
               disabled={analyzing || !caseData.ai_case_id}
-              className="text-xs bg-orange-950/40 border border-orange-600/50 text-orange-400 px-3 py-1 rounded font-bold hover:bg-orange-600 hover:text-black transition disabled:opacity-50"
+              className="rounded border border-orange-600/50 bg-orange-950/40 px-3 py-1 text-[13px] font-medium text-orange-300 transition hover:bg-orange-600 hover:text-black disabled:opacity-50"
             >
-              {analyzing ? "ANALYZING..." : "⚡ RUN ANALYSIS"}
+              {analyzing ? "Analyzing…" : "Run analysis"}
             </button>
             <button
               onClick={() => caseData?.ai_case_id && syncAiData(caseData.ai_case_id)}
-              className="text-xs bg-zinc-900 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded hover:border-white"
+              className="rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-[13px] text-zinc-300 hover:border-white"
             >
-              🔄 SYNC INTEL
+              Refresh
             </button>
             <button
               onClick={handleExportDossier}
-              className="text-xs bg-zinc-900 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded hover:border-white transition flex items-center gap-1.5"
+              className="flex items-center gap-1.5 rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-[13px] text-zinc-300 transition hover:border-white"
             >
-              📄 EXPORT DOSSIER
+              Export report
             </button>
-          </div>
-          {caseData.ai_case_id && (
-            <div className="text-[10px] text-neutral-500 mt-0 font-mono">AI_UUID: {caseData.ai_case_id.slice(0, 8)}...</div>
+                      </div>
+          {caseData.ai_case_id ? (
+            <div className="text-[12px] text-neutral-500">Analysis ready</div>
+          ) : (
+            <div className="text-[12px] text-neutral-500">Analysis not linked yet</div>
           )}
-        </div>
-      </div>
+                      </div>
+                    </div>
 
       <CaseChatDrawer
         aiCaseId={caseData?.ai_case_id ?? ""}
@@ -605,36 +612,36 @@ export default function CaseWorkspace() {
 
       {/* AI Analysis Live Findings Result Card */}
       {analysisResult && (
-        <div className="mb-8 p-5 border border-orange-500/50 bg-orange-950/20 rounded font-mono text-xs shadow-xl">
-          <div className="flex justify-between items-center mb-3 pb-2 border-b border-orange-900/40">
-            <span className="text-orange-400 font-bold tracking-widest uppercase flex items-center gap-2">
-              ⚡ LIVE ANALYSIS FINDINGS
+        <div className="mb-8 rounded-lg border border-white/10 bg-white/[0.03] p-5 text-[13px] shadow-xl">
+          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-3">
+            <span className="text-[14px] font-medium text-white">
+              Analysis results
             </span>
             <button
               onClick={() => setAnalysisResult(null)}
-              className="text-neutral-500 hover:text-white px-2 py-0.5 text-xs border border-white/10 rounded"
+              className="text-[13px] text-neutral-400 hover:text-white"
             >
-              ✕ DISMISS
+              Close
             </button>
           </div>
 
-          <div className="max-h-80 overflow-y-auto space-y-3 text-neutral-300">
+          <div className="max-h-80 space-y-3 overflow-y-auto text-neutral-300">
             {analysisResult.summary && (
               <div>
-                <span className="text-[10px] text-neutral-400 font-bold uppercase">Summary:</span>
-                <p className="mt-1 text-zinc-300 leading-relaxed">{analysisResult.summary}</p>
+                <span className="text-[12px] text-neutral-500">Summary</span>
+                <p className="mt-1 leading-6 text-zinc-300">{analysisResult.summary}</p>
               </div>
             )}
 
             {analysisResult.key_findings && (
               <div>
-                <span className="text-[10px] text-neutral-400 font-bold uppercase">Key Findings:</span>
+                <span className="text-[12px] text-neutral-500">Key findings</span>
                 <ul className="mt-1 list-disc list-inside space-y-1 text-zinc-300">
                   {analysisResult.key_findings.map((finding: string, i: number) => (
                     <li key={i}>{finding}</li>
                   ))}
                 </ul>
-              </div>
+          </div>
             )}
 
             {!analysisResult.summary && (
@@ -651,104 +658,109 @@ export default function CaseWorkspace() {
       {/* AI Pipeline Live Status Bar */}
       {jobStatus !== "idle" && (
         <div className="mb-8 p-4 border border-orange-500/30 bg-orange-500/3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3">
             <span className={`h-2.5 w-2.5 rounded-full ${
               jobStatus === "completed" ? "bg-emerald-400" : jobStatus === "failed" ? "bg-red-500" : "bg-orange-400 animate-ping"
             }`} />
-            <div>
-              <div className="text-xs font-bold text-white uppercase">AI FIR Processing Engine: {jobStatus}</div>
-              <div className="text-[11px] text-neutral-400 mt-0.5">
-                {jobStatus === "queued" && "FIR queued for background S3/SQS ingestion..."}
-                {jobStatus === "processing" && "Performing OCR, Gemini Entity Extraction & Graph Linking..."}
-                {jobStatus === "completed" && "Entity extraction complete. Knowledge graph ready."}
-                {jobStatus === "failed" && "Processing status pending or failed."}
+                    <div>
+              <div className="text-[14px] font-medium text-white">
+                {jobStatus === "queued" && "In the queue"}
+                {jobStatus === "processing" && "Processing file"}
+                {jobStatus === "completed" && "Processing complete"}
+                {jobStatus === "failed" && "Processing failed"}
               </div>
-            </div>
-          </div>
-          {jobId && <span className="text-[10px] text-neutral-500 font-mono">JOB: {jobId.slice(0, 8)}</span>}
-        </div>
+              <div className="mt-0.5 text-[13px] text-neutral-400">
+                {jobStatus === "queued" && "Your FIR is waiting to be processed."}
+                {jobStatus === "processing" && "Reading the document and pulling out people, events, and links."}
+                {jobStatus === "completed" && "People and connections are ready to review."}
+                {jobStatus === "failed" && "Something went wrong. Try uploading again."}
+                    </div>
+                  </div>
+                  </div>
+          {jobId && <span className="font-mono text-[11px] text-neutral-500">Job {jobId.slice(0, 8)}</span>}
+                </div>
       )}
 
       {/* Ingestion Cards */}
       <div className="mb-10">
-        <div className="text-xs font-bold tracking-widest text-neutral-300">MULTI-SOURCE DATA INGESTION</div>
-        <div className="text-[11px] text-neutral-500 mt-1 mb-5">Bring different intelligence sources into this case workspace.</div>
+        <div className="text-[14px] font-medium text-neutral-200">Add files to this case</div>
+        <div className="mb-5 mt-1 text-[13px] text-neutral-500">Upload reports, records, photos, or notes.</div>
 
-        <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="border border-white/10 bg-white/1 p-6 text-center hover:border-orange-500/40">
-            <div className="text-xs font-bold text-white">DOCUMENTS / FIR</div>
-            <div className="text-[10px] text-neutral-500 mt-1">PDF ONLY</div>
+            <div className="text-[14px] font-medium text-white">Documents / FIR</div>
+            <div className="mt-1 text-[12px] text-neutral-500">PDF only</div>
             <button
               disabled={submitting}
               onClick={() => docInputRef.current?.click()}
-              className="mt-4 text-[11px] font-bold text-orange-500 hover:underline disabled:opacity-50"
+              className="mt-4 text-[13px] font-medium text-orange-400 hover:underline disabled:opacity-50"
             >
-              ↑ INGEST & PROCESS
+              Upload and process
             </button>
-          </div>
+                </div>
 
           <div className="border border-white/10 bg-white/1 p-6 text-center hover:border-orange-500/40">
-            <div className="text-xs font-bold text-white">CSV / EXCEL</div>
-            <div className="text-[10px] text-neutral-500 mt-1">CDR, BANK STATEMENTS</div>
-            <button
+            <div className="text-[14px] font-medium text-white">Spreadsheet</div>
+            <div className="mt-1 text-[12px] text-neutral-500">CDR, bank statements</div>
+                  <button
               disabled={submitting}
               onClick={() => csvInputRef.current?.click()}
-              className="mt-4 text-[11px] font-bold text-orange-500 hover:underline disabled:opacity-50"
-            >
-              ↑ INGEST SPREADSHEET
-            </button>
-          </div>
+              className="mt-4 text-[13px] font-medium text-orange-400 hover:underline disabled:opacity-50"
+                  >
+              Upload spreadsheet
+                  </button>
+                </div>
 
           <div className="border border-white/10 bg-white/1 p-6 text-center hover:border-orange-500/40">
-            <div className="text-xs font-bold text-white">IMAGE EVIDENCE</div>
-            <div className="text-[10px] text-neutral-500 mt-1">CCTV, SCENE, VEHICLES</div>
-            <button
+            <div className="text-[14px] font-medium text-white">Photos</div>
+            <div className="mt-1 text-[12px] text-neutral-500">CCTV, scene, vehicles</div>
+                    <button
               disabled={submitting}
               onClick={() => imgInputRef.current?.click()}
-              className="mt-4 text-[11px] font-bold text-orange-500 hover:underline disabled:opacity-50"
+              className="mt-4 text-[13px] font-medium text-orange-400 hover:underline disabled:opacity-50"
             >
-              ↑ INGEST IMAGE
+              Upload photo
             </button>
-          </div>
-        </div>
+                        </div>
+                      </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="border border-zinc-800 bg-zinc-950 p-4 rounded">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-xs font-bold text-zinc-300">INTERROGATION NOTES</span>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[13px] font-medium text-zinc-200">Interview notes</span>
               <button
                 onClick={handleNotesSubmit}
                 disabled={isSubmittingNotes}
-                className="text-[11px] bg-orange-600 hover:bg-orange-500 text-white font-semibold px-2.5 py-1 rounded disabled:opacity-50"
+                className="rounded bg-orange-600 px-2.5 py-1 text-[12px] font-medium text-white hover:bg-orange-500 disabled:opacity-50"
               >
-                {isSubmittingNotes ? "ANALYZING..." : "INGEST INTEL"}
+                {isSubmittingNotes ? "Adding…" : "Add to case"}
               </button>
-            </div>
+                      </div>
             <textarea
               value={notesText}
               onChange={(e) => setNotesText(e.target.value)}
-              placeholder="Paste interrogation statements, confessions, or informant tips..."
-              className="w-full h-20 bg-zinc-900 border border-zinc-800 rounded p-2 text-xs text-zinc-200 outline-none focus:border-orange-500 resize-none"
+              placeholder="Paste interview notes, statements, or tips…"
+              className="h-20 w-full resize-none rounded border border-zinc-800 bg-zinc-900 p-2 text-[13px] text-zinc-200 outline-none focus:border-orange-500"
             />
           </div>
           <div className="border border-white/10 bg-white/1 p-5">
-            <div className="text-xs font-bold text-white">URL / OSINT INTEL</div>
-            <div className="text-[10px] text-neutral-500 mb-3">Reference OSINT or public record link</div>
+            <div className="text-[14px] font-medium text-white">Web link</div>
+            <div className="mb-3 text-[12px] text-neutral-500">Add a public record or open-source link</div>
             <button onClick={() => setModalType("URL")} className="w-full text-left text-xs text-neutral-500 border border-white/10 p-3 bg-black">
               https://...
-            </button>
-          </div>
-        </div>
-      </div>
+                    </button>
+                </div>
+                        </div>
+                      </div>
 
       <div className="mb-3 flex justify-end">
-        <button
+                      <button
           onClick={() => setIsTimelineOpen(true)}
-          className="border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-[10px] font-bold tracking-widest text-orange-400 transition-colors hover:bg-orange-500 hover:text-black"
-        >
-          VIEW TIMELINE ({incidentsList.length})
-        </button>
-      </div>
+          className="h-10 rounded-lg border border-orange-600/50 bg-orange-950/40 px-4 text-[13px] font-medium text-orange-200 transition-colors hover:border-orange-400/60 hover:bg-orange-600/20 hover:text-white"
+                      >
+          Timeline ({incidentsList.length})
+                      </button>
+                    </div>
 
       {/* Quick Search / Filter Bar */}
       <div className="mb-4 flex items-center justify-between gap-4">
@@ -757,7 +769,7 @@ export default function CaseWorkspace() {
             type="text"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search suspects, phones, aliases, or incident narratives..."
+            placeholder="Search people, phone numbers, or incidents…"
             className="w-full bg-zinc-950 border border-zinc-800 rounded px-3.5 py-2 text-xs text-white placeholder-neutral-500 outline-none focus:border-orange-500 transition-colors"
           />
           {searchQuery && (
@@ -768,7 +780,7 @@ export default function CaseWorkspace() {
               ✕
             </button>
           )}
-        </div>
+                </div>
         {searchQuery && (
           <span className="text-[11px] text-orange-400 whitespace-nowrap">
             Filtering active
@@ -777,16 +789,16 @@ export default function CaseWorkspace() {
       </div>
 
       {/* Tabs Header */}
-      <div className="border-b border-white/10 mb-6 flex gap-6 text-xs font-bold overflow-x-auto">
+      <div className="mb-6 flex gap-5 overflow-x-auto border-b border-white/10 text-[13px]">
         {[
-          { key: "sources", label: `RAW EVIDENCE (${caseData.sources?.length || 0})` },
-          { key: "persons", label: `IDENTIFIED PERSONS (${personsList.length})` },
-          { key: "unknowns", label: `UNKNOWN IDENTITIES (${unknownsList.length})` },
-          { key: "incidents", label: `INCIDENTS (${incidentsList.length})` },
-          { key: "relations", label: `RELATIONSHIPS (${relationsList.length})` },
-          { key: "graph", label: `NETWORK GRAPH` },
+          { key: "sources", label: `Evidence (${caseData.sources?.length || 0})` },
+          { key: "persons", label: `People (${personsList.length})` },
+          { key: "unknowns", label: `Unknown identities (${unknownsList.length})` },
+          { key: "incidents", label: `Incidents (${incidentsList.length})` },
+          { key: "relations", label: `Relationships (${relationsList.length})` },
+          { key: "graph", label: "Network" },
         ].map((t) => (
-          <button
+                      <button
             key={t.key}
             onClick={() => setActiveTab(t.key as ActiveTab)}
             className={`pb-3 border-b-2 transition-all whitespace-nowrap ${
@@ -794,7 +806,7 @@ export default function CaseWorkspace() {
             }`}
           >
             {t.label}
-          </button>
+                      </button>
         ))}
       </div>
 
@@ -802,15 +814,15 @@ export default function CaseWorkspace() {
       {activeTab === "sources" && (
         <div className="grid grid-cols-3 gap-3">
           {(!caseData.sources || caseData.sources.length === 0) ? (
-            <div className="col-span-3 text-xs text-neutral-500 p-8 text-center border border-white/5">
-              No evidence sources attached yet.
+            <div className="col-span-3 rounded-lg border border-white/5 p-8 text-center text-[13px] text-neutral-500">
+              No files have been added to this case yet.
             </div>
           ) : (
             caseData.sources.map((s: SourceData, i: number) => (
-              <div key={i} onClick={() => setPreviewSource(s)} className="border border-white/10 bg-white/2 p-4 cursor-pointer hover:border-orange-500/30">
-                <span className="text-[9px] px-2 py-0.5 bg-orange-500/10 text-orange-400 font-bold">{s.type}</span>
-                <div className="text-xs font-bold text-white mt-2 truncate">{s.title}</div>
-                <div className="text-[10px] text-neutral-500 mt-1">Click to inspect ↗</div>
+              <div key={i} onClick={() => setPreviewSource(s)} className="cursor-pointer border border-white/10 bg-white/2 p-4 hover:border-orange-500/30">
+                <span className="bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300">{humanize(s.type)}</span>
+                <div className="mt-2 truncate text-[14px] font-medium text-white">{s.title}</div>
+                <div className="mt-1 text-[12px] text-neutral-500">Open</div>
               </div>
             ))
           )}
@@ -824,32 +836,32 @@ export default function CaseWorkspace() {
             <div className="grid grid-cols-2 gap-3">
               {filteredPersons.map((item: PersonRecord, idx: number) => {
                 const p = item.person || item;
-                const name = p.identity?.name || p.name || p.canonical_name || "Unnamed Person";
-                const role = (item.roles && item.roles[0]) || p.role || "PERSON OF INTEREST";
+                const name = p.identity?.name || p.name || p.canonical_name || "Unnamed person";
+                const role = humanize((item.roles && item.roles[0]) || p.role, "Person of interest");
                 const phone = p.contact?.phones?.[0] || p.phone || null;
                 const address = p.addresses?.[0]?.text || null;
                 const aliases = p.identity?.aliases?.join(", ") || null;
 
                 return (
-                  <div key={idx} className="border border-white/10 bg-white/2 p-4 flex flex-col justify-between">
+                  <div key={idx} className="flex flex-col justify-between border border-white/10 bg-white/2 p-4">
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs font-bold text-white">{name}</div>
-                        <span className="text-[9px] px-2 py-0.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold uppercase">
+                        <div className="text-[14px] font-medium text-white">{name}</div>
+                        <span className="border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300">
                           {role}
                         </span>
                       </div>
-                      {aliases && <div className="text-[10px] text-orange-400/80 mt-1">aka {aliases}</div>}
-                      {phone && <div className="text-[11px] text-neutral-400 mt-2">📞 {phone}</div>}
-                      {address && <div className="text-[11px] text-neutral-500 mt-1">📍 {address}</div>}
+                      {aliases && <div className="mt-1 text-[12px] text-orange-400/80">Also known as {aliases}</div>}
+                      {phone && <div className="mt-2 text-[13px] text-neutral-400">{phone}</div>}
+                      {address && <div className="mt-1 text-[13px] text-neutral-500">{address}</div>}
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
           ) : (
-            <div className="p-6 border border-dashed border-zinc-800 rounded text-center text-zinc-500 text-sm">
-              No identified persons detected in this document yet.
+            <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-[13px] text-zinc-500">
+              No people have been identified in this case yet.
             </div>
           )}
         </div>
@@ -859,25 +871,25 @@ export default function CaseWorkspace() {
       {activeTab === "unknowns" && (
         <div className="grid grid-cols-2 gap-3">
           {unknownsList.length === 0 ? (
-            <div className="col-span-2 text-xs text-neutral-500 p-8 text-center border border-white/5">
-              No unknown aliases or shadowy identifiers flagged.
-            </div>
+            <div className="col-span-2 rounded-lg border border-white/5 p-8 text-center text-[13px] text-neutral-500">
+              No unknown identities in this case.
+                </div>
           ) : (
             filteredUnknowns.map((u: UnknownIdentityRecord, idx: number) => (
-              <div key={idx} className="border border-red-500/30 bg-red-950/10 p-4 rounded flex flex-col justify-between">
+              <div key={idx} className="flex flex-col justify-between rounded-lg border border-red-500/30 bg-red-950/10 p-4">
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-red-400">🎭 {u.label || u.alias || "Unknown Node"}</span>
-                    <span className="text-[9px] px-2 py-0.5 bg-red-900/40 border border-red-700/50 text-red-300 font-bold uppercase">
-                      {u.status || "UNIDENTIFIED"}
+                    <span className="text-[14px] font-medium text-red-300">{u.label || u.alias || "Unknown person"}</span>
+                    <span className="border border-red-700/50 bg-red-900/40 px-2 py-0.5 text-[11px] text-red-200">
+                      {humanize(u.status, "Unidentified")}
                     </span>
-                  </div>
-                  <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
-                    {u.description?.replace(/^Unidentified Node:\s*/i, "") || "Unidentified accomplice in network."}
+            </div>
+                  <p className="mt-2 text-[13px] leading-6 text-zinc-400">
+                    {u.description?.replace(/^Unidentified Node:\s*/i, "") || "Identity is not confirmed yet."}
                   </p>
                 </div>
-                <div className="mt-3 text-[10px] text-neutral-500">
-                  ROLE: {u.roles?.[0] || "UNKNOWN"}
+                <div className="mt-3 text-[12px] text-neutral-500">
+                  Role: {humanize(u.roles?.[0], "Unknown")}
                 </div>
               </div>
             ))
@@ -892,19 +904,21 @@ export default function CaseWorkspace() {
             filteredIncidents.map((inc: IncidentRecord, idx: number) => (
               <div key={idx} className="p-4 border border-zinc-800 bg-zinc-950 rounded">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-orange-400 uppercase tracking-wide">
-                    {inc.time?.start ? `DATE LOGGED: ${inc.time.start}` : "INCIDENT LOG"}
+                  <span className="text-[13px] font-medium text-orange-300">
+                    {inc.time?.start ? inc.time.start : "Incident"}
                   </span>
-                  <span className="text-[9px] px-2 py-0.5 bg-zinc-900 border border-zinc-700 text-zinc-400">
-                    {inc.extraction?.method || "PARSED"}
-                  </span>
+                  {inc.extraction?.method && (
+                    <span className="border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400">
+                      {humanize(inc.extraction.method)}
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-zinc-300 mt-2 leading-relaxed">
-                  {inc.description || inc.title || inc.summary || "Detailed narrative pending AI extraction."}
+                <p className="mt-2 text-[13px] leading-6 text-zinc-300">
+                  {inc.description || inc.title || inc.summary || "Details will appear after analysis."}
                 </p>
                 {inc.key_points && inc.key_points.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-zinc-900">
-                    <div className="text-[10px] text-zinc-500 font-bold uppercase mb-2">Key Extracted Points:</div>
+                  <div className="mt-3 border-t border-zinc-900 pt-3">
+                    <div className="mb-2 text-[12px] text-zinc-500">Key points</div>
                     <ul className="space-y-1">
                       {inc.key_points.map((pt: string, i: number) => (
                         <li key={i} className="text-[11px] text-zinc-400 flex items-start gap-2">
@@ -918,8 +932,8 @@ export default function CaseWorkspace() {
               </div>
             ))
           ) : (
-            <div className="p-6 border border-dashed border-zinc-800 rounded text-center text-zinc-500 text-sm">
-              No incident statements found.
+            <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-[13px] text-zinc-500">
+              No incidents recorded yet.
             </div>
           )}
         </div>
@@ -929,27 +943,27 @@ export default function CaseWorkspace() {
       {activeTab === "relations" && (
         <div className="space-y-2">
           <div className="flex justify-between items-center mb-4">
-            <span className="text-xs text-neutral-400">Targeted links & corroborations</span>
+            <span className="text-[13px] text-neutral-400">How people are connected</span>
             <button
               onClick={() => setShowAddRelModal(!showAddRelModal)}
-              className="text-[11px] bg-orange-600/20 text-orange-400 border border-orange-500/40 px-3 py-1 rounded hover:bg-orange-600/30"
+              className="rounded border border-orange-500/40 bg-orange-600/20 px-3 py-1 text-[13px] text-orange-300 hover:bg-orange-600/30"
             >
-              {showAddRelModal ? "CANCEL" : "+ LINK ENTITIES"}
+              {showAddRelModal ? "Cancel" : "Add connection"}
             </button>
-          </div>
+      </div>
 
           {showAddRelModal && (
             <form onSubmit={handleAddRelation} className="mb-6 bg-zinc-950 border border-zinc-800 p-4 rounded space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="text-[10px] text-zinc-500 block mb-1">SOURCE ENTITY</label>
+                  <label className="mb-1 block text-[12px] text-zinc-500">From</label>
                   <select
                     value={relSource}
                     onChange={(event) => setRelSource(event.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-white text-xs p-2 rounded outline-none"
+                    className="w-full rounded border border-zinc-800 bg-zinc-900 p-2 text-[13px] text-white outline-none"
                     required
                   >
-                    <option value="">Select Entity A</option>
+                    <option value="">Select a person</option>
                     {personsList.map((person, index) => {
                       const profile = person.person || person;
                       const id = profile.person_id || profile.id || `p-${index}`;
@@ -960,26 +974,26 @@ export default function CaseWorkspace() {
                 </div>
 
                 <div>
-                  <label className="text-[10px] text-zinc-500 block mb-1">RELATION TYPE</label>
+                  <label className="mb-1 block text-[12px] text-zinc-500">Connection type</label>
                   <input
                     type="text"
                     value={relType}
                     onChange={(event) => setRelType(event.target.value)}
-                    placeholder="e.g. CALLS, TRANSFERS_FUNDS, ASSOCIATE"
+                    placeholder="e.g. Calls, Transfers funds, Associate"
                     className="w-full bg-zinc-900 border border-zinc-800 text-white text-xs p-2 rounded outline-none"
                     required
                   />
-                </div>
+    </div>
 
-                <div>
-                  <label className="text-[10px] text-zinc-500 block mb-1">TARGET ENTITY</label>
+    <div>
+                  <label className="mb-1 block text-[12px] text-zinc-500">To</label>
                   <select
                     value={relTarget}
                     onChange={(event) => setRelTarget(event.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-white text-xs p-2 rounded outline-none"
+                    className="w-full rounded border border-zinc-800 bg-zinc-900 p-2 text-[13px] text-white outline-none"
                     required
                   >
-                    <option value="">Select Entity B</option>
+                    <option value="">Select a person</option>
                     {personsList.map((person, index) => {
                       const profile = person.person || person;
                       const id = profile.person_id || profile.id || `p-${index}`;
@@ -987,34 +1001,34 @@ export default function CaseWorkspace() {
                       return <option key={id} value={id}>{name}</option>;
                     })}
                   </select>
-                </div>
+    </div>
               </div>
 
-              <div>
-                <label className="text-[10px] text-zinc-500 block mb-1">CORROBORATING EVIDENCE / WITNESS NOTE</label>
+          <div>
+                <label className="mb-1 block text-[12px] text-zinc-500">Supporting note</label>
                 <input
                   type="text"
                   value={relEvidence}
                   onChange={(event) => setRelEvidence(event.target.value)}
-                  placeholder="e.g. CDR analysis showed 14 calls between 01:00 AM and 03:00 AM on incident night."
+                  placeholder="e.g. Call records show 14 calls between 1:00 AM and 3:00 AM."
                   className="w-full bg-zinc-900 border border-zinc-800 text-white text-xs p-2 rounded outline-none"
                 />
-              </div>
+          </div>
 
               <button
                 type="submit"
                 disabled={relSubmitting}
                 className="text-xs bg-orange-500 text-black font-bold px-4 py-1.5 rounded hover:bg-orange-400 disabled:opacity-50"
               >
-                {relSubmitting ? "SAVING LINK..." : "CONFIRM & LINK IN GRAPH"}
-              </button>
+                {relSubmitting ? "Saving…" : "Save connection"}
+          </button>
             </form>
           )}
 
           {relationsList.length === 0 ? (
             <div className="text-xs text-neutral-500 p-8 text-center border border-white/5">
-              Relationships will appear after Graph Entity linking finishes.
-            </div>
+              No relationships recorded yet.
+        </div>
           ) : (
             filteredRelations.map((rel: RelationRecord, idx: number) => {
               const fromName = getEntityName(rel.from?.id || rel.source || "Node A");
@@ -1024,18 +1038,18 @@ export default function CaseWorkspace() {
                 <div key={idx} className="border border-zinc-800 bg-zinc-950 p-4 rounded">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-white">{fromName}</span>
-                    <span className="px-2.5 py-0.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 text-[10px] font-bold uppercase">
-                      ── {rel.type || "LINKED_TO"} ──▶
+                    <span className="border border-orange-500/30 bg-orange-500/10 px-2.5 py-0.5 text-[12px] text-orange-300">
+                      {humanize(rel.type, "Linked to")}
                     </span>
                     <span className="text-xs font-bold text-white">{toName}</span>
-                  </div>
+        </div>
                   {rel.evidence && (
                     <p className="text-[11px] text-zinc-400 italic leading-relaxed mt-1">
                       &quot;{rel.evidence}&quot;
                     </p>
                   )}
-                </div>
-              );
+    </div>
+  );
             })
           )}
         </div>
@@ -1045,26 +1059,26 @@ export default function CaseWorkspace() {
       {activeTab === "graph" && (
         <div className="border border-zinc-800 bg-zinc-950 p-6 rounded space-y-6">
           <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
-            <div>
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                Interactive Link Analysis Network
+        <div>
+              <h3 className="text-[14px] font-medium text-white">
+                Network map
               </h3>
-              <p className="text-[11px] text-zinc-500 mt-0.5">
-                Visual entity map generated via AI case reasoning
+              <p className="mt-0.5 text-[13px] text-zinc-500">
+                People and connections found in this case
               </p>
             </div>
-            <span className="text-[10px] bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded text-neutral-400">
-              {graphNodes.length} Entities • {graphEdges.length} Links
+            <span className="rounded border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-[12px] text-neutral-400">
+              {graphNodes.length} people · {graphEdges.length} links
             </span>
           </div>
 
           {loadingGraph ? (
             <div className="p-12 text-center text-xs text-neutral-500">
-              Generating graph layout...
-            </div>
+              Building the network map…
+        </div>
           ) : graphNodes.length === 0 ? (
             <div className="p-12 text-center text-xs text-neutral-500 border border-dashed border-zinc-800 rounded">
-              No graph entities found. Click &quot;⚡ RUN ANALYSIS&quot; to compute network topology.
+              No network to show yet. Run analysis first.
             </div>
           ) : (
             <div className="space-y-6">
@@ -1101,7 +1115,7 @@ export default function CaseWorkspace() {
                       };
                     });
 
-                    return (
+      return (
                       <>
                         {/* Connecting Lines */}
                         {graphEdges.map((e, i) => {
@@ -1112,7 +1126,7 @@ export default function CaseWorkspace() {
 
                           if (!start || !end) return null;
 
-                          return (
+                      return (
                             <g key={`edge-${i}`}>
                               <line
                                 x1={start.x}
@@ -1126,8 +1140,8 @@ export default function CaseWorkspace() {
                                 opacity="0.6"
                               />
                             </g>
-                          );
-                        })}
+                      );
+                    })}
 
                         {/* Nodes */}
                         {graphNodes.map((n, i) => {
@@ -1173,28 +1187,28 @@ export default function CaseWorkspace() {
                     );
                   })()}
                 </svg>
-              </div>
+          </div>
 
               {/* Edge Evidence List */}
               <div className="space-y-2">
-                <div className="text-[10px] text-neutral-400 font-bold uppercase mb-2">
-                  Targeted Links & Evidence
-                </div>
+                <div className="mb-2 text-[12px] text-neutral-400">
+                  Connections
+        </div>
                 {graphEdges.map((e, i) => {
                   const fId = e.from?.id || e.source || "";
                   const tId = e.to?.id || e.target || "";
                   const fLabel = graphNodes.find((n) => n.id === fId)?.label || fId;
                   const tLabel = graphNodes.find((n) => n.id === tId)?.label || tId;
 
-                  return (
+      return (
                     <div
                       key={i}
                       className="text-xs font-mono bg-zinc-950 border border-zinc-800 p-2.5 rounded flex flex-col gap-1.5"
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-white font-bold">{fLabel}</span>
-                        <span className="text-orange-400 font-bold px-2 text-[10px] bg-orange-500/10 border border-orange-500/30 rounded py-0.5">
-                          ──[{e.type || "LINKED_TO"}]──▶
+                        <span className="rounded border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300">
+                          {humanize(e.type, "Linked to")}
                         </span>
                         <span className="text-white font-bold">{tLabel}</span>
                       </div>
@@ -1224,9 +1238,9 @@ export default function CaseWorkspace() {
             <div className="mb-2 flex justify-end">
               <button
                 onClick={() => setIsTimelineOpen(false)}
-                className="border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-neutral-400 hover:border-orange-500 hover:text-white"
+                className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-[13px] text-neutral-400 hover:border-orange-500 hover:text-white"
               >
-                ✕ CLOSE
+                Close
               </button>
             </div>
             <CaseTimelineView incidents={incidentsList} themeColor="orange" />
@@ -1238,28 +1252,28 @@ export default function CaseWorkspace() {
       {modalType && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <form onSubmit={handleModalSubmit} className="border border-white/20 bg-[#0a0a0a] p-6 max-w-md w-full">
-            <h3 className="text-sm font-bold text-white mb-4">INGEST SOURCE: {modalType}</h3>
+            <h3 className="mb-4 text-[15px] font-medium text-white">Add {humanize(modalType)}</h3>
             <input
               value={sourceTitle}
               onChange={(e) => setSourceTitle(e.target.value)}
-              placeholder="Source Title"
-              className="w-full border border-white/10 bg-black p-2.5 text-xs text-white mb-3 outline-none"
+              placeholder="Title"
+              className="mb-3 w-full border border-white/10 bg-black p-2.5 text-[13px] text-white outline-none"
               required
             />
             <textarea
               value={sourceContent}
               onChange={(e) => setSourceContent(e.target.value)}
-              placeholder={modalType === "URL" ? "https://..." : "Write intelligence notes..."}
-              className="w-full border border-white/10 bg-black p-2.5 text-xs text-white mb-4 outline-none"
+              placeholder={modalType === "URL" ? "https://..." : "Write notes…"}
+              className="mb-4 w-full border border-white/10 bg-black p-2.5 text-[13px] text-white outline-none"
               rows={4}
               required
             />
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setModalType(null)} className="px-4 py-2 border border-white/10 text-xs">
-                CANCEL
+              <button type="button" onClick={() => setModalType(null)} className="border border-white/10 px-4 py-2 text-[13px]">
+                Cancel
               </button>
-              <button type="submit" disabled={submitting} className="px-4 py-2 bg-orange-600 text-xs font-bold text-white">
-                {submitting ? "INGESTING..." : "SAVE SOURCE"}
+              <button type="submit" disabled={submitting} className="bg-orange-600 px-4 py-2 text-[13px] font-medium text-white">
+                {submitting ? "Saving…" : "Save"}
               </button>
             </div>
           </form>
@@ -1271,13 +1285,13 @@ export default function CaseWorkspace() {
           <div className="flex h-[80vh] w-full max-w-3xl flex-col border border-white/20 bg-[#0c0c0d] shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
               <div className="flex items-center gap-3">
-                <span className="bg-orange-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-orange-400">
-                  {previewSource.type}
+                <span className="bg-orange-500/10 px-2 py-0.5 text-[12px] text-orange-300">
+                  {humanize(previewSource.type)}
                 </span>
                 <h3 className="max-w-md truncate text-sm font-bold text-white">{previewSource.title}</h3>
-              </div>
+          </div>
               <button onClick={() => setPreviewSource(null)} className="px-2 text-sm text-neutral-500 hover:text-white">✕</button>
-            </div>
+        </div>
 
             <div className="flex-1 overflow-hidden bg-[#050505] p-6 flex items-center justify-center">
               {previewSource.type === "IMAGE" && (
@@ -1296,26 +1310,26 @@ export default function CaseWorkspace() {
               {(previewSource.type === "NOTES" || previewSource.type === "URL") && (
                 <div className="h-full w-full overflow-y-auto p-4 font-mono text-xs text-neutral-300 whitespace-pre-wrap leading-relaxed">
                   {previewSource.content}
-                </div>
+        </div>
               )}
 
               {previewSource.type !== "IMAGE" && previewSource.type !== "NOTES" && previewSource.type !== "URL" && (
                 <div className="flex flex-col items-center justify-center text-center p-8 border border-white/10 bg-white/1 rounded max-w-md">
                   <div className="text-4xl mb-3">📁</div>
                   <h4 className="text-sm font-bold text-white mb-2">{previewSource.title}</h4>
-                  <p className="text-xs text-neutral-400 mb-6">Download to inspect document locally.</p>
+                  <p className="mb-6 text-[13px] text-neutral-400">Download to review the full file.</p>
                   {previewSource.content.startsWith("data:") ? (
                     <a
                       href={previewSource.content}
                       download={previewSource.title}
-                      className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-6 py-3 transition-colors"
+                      className="bg-orange-600 px-6 py-3 text-[13px] font-medium text-white transition-colors hover:bg-orange-500"
                     >
-                      DOWNLOAD FILE ⤓
+                      Download file
                     </a>
                   ) : (
                     <span className="text-xs text-red-400">Invalid file data.</span>
-                  )}
-                </div>
+          )}
+        </div>
               )}
             </div>
           </div>

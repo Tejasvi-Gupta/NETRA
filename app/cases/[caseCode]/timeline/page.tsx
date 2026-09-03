@@ -50,7 +50,7 @@ export default function CaseTimelinePage() {
         const incidents = caseData.ai_extracted_data?.incidents || [];
         setEvents(incidents);
       } catch {
-        setError("Failed to fetch timeline intel.");
+        setError("Could not load the timeline.");
       } finally {
         setLoading(false);
       }
@@ -62,7 +62,7 @@ export default function CaseTimelinePage() {
   if (loading) {
     return (
       <main className="min-h-screen bg-[#080808] px-6 py-24 text-center font-mono text-xs tracking-widest text-neutral-500">
-        LOADING TIMELINE INTEL…
+        Loading timeline…
       </main>
     );
   }
@@ -75,7 +75,7 @@ export default function CaseTimelinePage() {
           onClick={() => router.push("/cases")}
           className="mt-6 border border-neutral-700 px-4 py-2 text-xs tracking-widest hover:border-red-500 text-neutral-300"
         >
-          BACK TO CASES
+          Back to cases
         </button>
       </main>
     );
@@ -88,18 +88,18 @@ export default function CaseTimelinePage() {
           onClick={() => router.push(`/cases/${caseCode}`)}
           className="text-[11px] tracking-[0.16em] text-neutral-400 hover:text-red-400"
         >
-          ← BACK TO WORKSPACE
+          ← Back to case
         </button>
 
         <div className="mt-5 border-b border-white/10 pb-5">
           <span className="text-xs text-red-500 font-bold uppercase">{caseRecord.case_code}</span>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight text-white uppercase">EVENT TIMELINE</h1>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-white">Timeline</h1>
           <p className="mt-1 text-xs text-neutral-400">{caseRecord.title}</p>
         </div>
 
         {events.length === 0 ? (
           <div className="mt-10 border border-neutral-800 bg-[#0d0d0d] py-16 text-center text-xs text-neutral-500">
-            No incident events detected by the AI pipeline yet. Run analysis first.
+            No timeline events yet. Run analysis first.
           </div>
         ) : (
           <div className="mt-10 relative pl-6 border-l border-red-900/40">
@@ -107,15 +107,15 @@ export default function CaseTimelinePage() {
               <div key={idx} className="relative mb-10 last:mb-0 group">
                 <span className="absolute -left-[31px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-red-500 bg-[#080808] group-hover:bg-red-500 transition-colors" />
 
-                <div className="text-[10px] tracking-widest text-red-400 font-bold uppercase">
-                  {e.time?.start ? `DATE LOGGED: ${e.time.start}` : `EVENT #${idx + 1}`}
+                <div className="text-[13px] font-medium text-red-400">
+                  {e.time?.start ? e.time.start : `Event ${idx + 1}`}
                   {e.extraction?.method && (
-                    <span className="text-neutral-500 ml-2">· PARSED VIA {e.extraction.method}</span>
+                    <span className="ml-2 text-neutral-500">· {e.extraction.method.replace(/[_-]+/g, " ")}</span>
                   )}
                 </div>
 
                 <div className="mt-2 text-sm font-semibold text-white">
-                  {e.title || "Incident Report Statement"}
+                  {e.title || "Incident"}
                 </div>
 
                 <p className="mt-2 text-xs leading-relaxed text-neutral-300">
@@ -124,8 +124,8 @@ export default function CaseTimelinePage() {
 
                 {e.key_points && e.key_points.length > 0 && (
                   <div className="mt-3.5 pt-3 border-t border-neutral-850">
-                    <span className="text-[10px] text-neutral-500 uppercase tracking-wider block mb-1">
-                      Key Highlights:
+                    <span className="mb-1 block text-[12px] text-neutral-500">
+                      Key points
                     </span>
                     <ul className="space-y-1">
                       {e.key_points.map((pt, ptIdx) => (

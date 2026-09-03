@@ -107,6 +107,11 @@ interface AnalysisResult {
 
 type ActiveTab = "sources" | "persons" | "unknowns" | "incidents" | "relations" | "graph";
 
+function humanize(value?: string | null, fallback = "") {
+  if (!value) return fallback;
+  return value.replace(/[_-]+/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export default function AdminCaseView() {
   const { caseCode } = useParams();
   const router = useRouter();
@@ -160,7 +165,7 @@ export default function AdminCaseView() {
 
   const handleRunAnalysis = async () => {
     if (!caseData?.ai_case_id) {
-      alert("No AI Case ID linked to this case.");
+      alert("This case is not linked to analysis yet.");
       return;
     }
     setAnalyzing(true);
@@ -175,16 +180,16 @@ export default function AdminCaseView() {
         setAnalysisResult(data);
         await fetchCase();
       } else {
-        alert(`Analysis Error: ${data.error || data.detail || "Failed"}`);
+        alert(data.error || data.detail || "Analysis failed. Please try again.");
       }
     } catch {
-      alert("Failed to trigger analysis.");
+      alert("Could not start analysis. Please try again.");
     } finally {
       setAnalyzing(false);
     }
   };
 
-  if (!caseData) return <div className="p-8 text-neutral-500 font-mono">Loading case review...</div>;
+  if (!caseData) return <div className="p-8 text-[14px] text-neutral-500">Loading case…</div>;
 
   const aiData = caseData.ai_extracted_data || {};
   const personsList = aiData.persons || [];
@@ -204,73 +209,95 @@ export default function AdminCaseView() {
 
   return (
     <>
-    <div className="min-h-screen bg-[#050505] text-neutral-200 font-mono p-8 max-w-[1180px] mx-auto print:hidden">
-      <div className="flex justify-between items-center mb-4">
-        <button onClick={() => router.push("/admin/dashboard")} className="text-xs text-neutral-500 hover:text-white">
-          ← DASHBOARD
+    <div className="relative min-h-screen overflow-x-hidden bg-[#050505] text-neutral-200 print:hidden">
+      <div
+        className="pointer-events-none fixed inset-0 opacity-[0.05]"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(239,68,68,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(239,68,68,0.5) 1px, transparent 1px)",
+          backgroundSize: "44px 44px",
+          maskImage: "radial-gradient(ellipse 90% 90% at 50% 0%, black 20%, transparent 75%)",
+        }}
+      />
+      <div className="pointer-events-none fixed -left-40 -top-40 h-[600px] w-[600px] rounded-full bg-red-600/10 blur-[130px]" />
+      <div className="pointer-events-none fixed -bottom-40 right-0 h-[500px] w-[500px] rounded-full bg-orange-600/10 blur-[130px]" />
+
+      <div className="relative z-10 mx-auto max-w-[1180px] px-4 py-8 sm:px-8 sm:py-10">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <button onClick={() => router.push("/admin/dashboard")} className="text-[13px] text-neutral-400 hover:text-white">
+          ← Intelligence Workspace
         </button>
 
-        {/* Explicit Analysis Action Button */}
+        <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={handleRunAnalysis}
           disabled={analyzing || !caseData.ai_case_id}
-          className="bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-700/50 text-xs px-3.5 py-1.5 rounded font-bold disabled:opacity-50 transition-colors"
+          className="h-10 rounded-lg border border-red-500/35 bg-red-500/[0.12] px-4 text-[13px] font-medium text-red-200 transition-colors hover:border-red-400/60 hover:bg-red-500/20 hover:text-white disabled:opacity-50"
         >
-          {analyzing ? "ANALYZING EVIDENCE..." : "⚡ RUN ANALYSIS"}
+          {analyzing ? "Analyzing…" : "Run analysis"}
         </button>
         <button
           onClick={() => window.print()}
-          className="bg-zinc-900 hover:bg-zinc-800 text-neutral-300 border border-zinc-700 text-xs px-3.5 py-1.5 rounded font-bold transition-colors"
+          className="h-10 rounded-lg border border-white/[0.12] bg-white/[0.04] px-4 text-[13px] font-medium text-neutral-200 transition-colors hover:border-white/25 hover:text-white"
         >
-          📄 EXPORT DOSSIER
+          Export report
         </button>
+        </div>
       </div>
 
-      <div className="flex justify-between items-start mb-6 border-b border-white/10 pb-6">
-        <div>
-          <span className="text-xs text-red-500 font-bold">{caseData.case_code}</span>
-          <h1 className="text-3xl font-black text-white mt-1">{caseData.title}</h1>
-          <p className="text-xs text-neutral-400 mt-2">{caseData.investigation_summary || "No summary provided."}</p>
+      <div className="mb-6 flex flex-col justify-between gap-4 border-b border-white/10 pb-6 sm:flex-row sm:items-start">
+        <div className="min-w-0">
+          <span className="text-[11px] font-semibold tracking-wide text-red-500">{caseData.case_code}</span>
+          <h1 className="mt-1 text-[28px] font-semibold tracking-tight text-white sm:text-[32px]">{caseData.title}</h1>
+          <p className="mt-2 text-[13px] leading-6 text-neutral-500">{caseData.investigation_summary || "No summary provided."}</p>
         </div>
-        <div className="text-right">
-          <div className="text-xs text-neutral-500">ASSIGNED INVESTIGATOR</div>
-          <div className="text-sm font-bold text-white mt-1">{caseData.assigned_investigator || "Netra Investigator"}</div>
-          <span className="inline-block mt-2 text-xs px-2.5 py-0.5 bg-red-500/10 border border-red-500/30 text-red-400 uppercase">
-            {caseData.status}
-          </span>
-          {caseData.ai_case_id && (
-            <div className="text-[10px] text-neutral-600 mt-1 font-mono">AI_UUID: {caseData.ai_case_id.slice(0, 8)}...</div>
-          )}
+        <div className="w-full shrink-0 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-4 sm:w-[240px]">
+          <div className="text-[12px] text-neutral-500">Status</div>
+          <div className="mt-1 text-[14px] font-medium text-white">
+            {caseData.status === "UNDER_REVIEW"
+              ? "Under review"
+              : caseData.status === "CLOSED"
+                ? "Closed"
+                : "Active"}
+          </div>
+
+          <div className="mt-4 text-[12px] text-neutral-500">Investigator</div>
+          <div className="mt-1 text-[14px] font-medium leading-5 text-white">
+            {caseData.assigned_investigator || "Unassigned"}
+          </div>
+
+          <div className="mt-4 text-[12px] text-neutral-500">Analysis</div>
+          <div className="mt-1 text-[14px] font-medium text-white">
+            {caseData.ai_case_id ? "Ready" : "Not linked yet"}
+          </div>
         </div>
       </div>
 
       {/* AI Intelligence Report Result Section */}
       {analysisResult && (
-        <div className="mb-6 p-5 border border-red-500/50 bg-red-950/20 rounded font-mono text-xs shadow-xl">
-          <div className="flex justify-between items-center mb-3 pb-2 border-b border-red-900/40">
-            <span className="text-red-400 font-bold tracking-widest uppercase flex items-center gap-2">
-              ⚡ LIVE ANALYSIS FINDINGS
-            </span>
+        <div className="mb-6 rounded-lg border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-3">
+            <span className="text-[14px] font-medium text-white">Analysis results</span>
             <button
               onClick={() => setAnalysisResult(null)}
-              className="text-neutral-500 hover:text-white px-2 py-0.5 text-xs border border-white/10 rounded"
+              className="text-[13px] text-neutral-400 hover:text-white"
             >
-              ✕ DISMISS
+              Close
             </button>
           </div>
 
-          <div className="max-h-80 overflow-y-auto space-y-3 text-neutral-300">
+          <div className="max-h-80 overflow-y-auto space-y-3 text-[13px] leading-6 text-neutral-300">
             {analysisResult.summary && (
               <div>
-                <span className="text-[10px] text-neutral-400 font-bold uppercase">Summary:</span>
-                <p className="mt-1 text-zinc-300 leading-relaxed">{analysisResult.summary}</p>
+                <span className="text-[12px] text-neutral-500">Summary</span>
+                <p className="mt-1 text-neutral-200">{analysisResult.summary}</p>
               </div>
             )}
 
             {analysisResult.key_findings && (
               <div>
-                <span className="text-[10px] text-neutral-400 font-bold uppercase">Key Findings:</span>
-                <ul className="mt-1 list-disc list-inside space-y-1 text-zinc-300">
+                <span className="text-[12px] text-neutral-500">Key findings</span>
+                <ul className="mt-1 list-disc list-inside space-y-1 text-neutral-200">
                   {analysisResult.key_findings.map((finding: string, i: number) => (
                     <li key={i}>{finding}</li>
                   ))}
@@ -293,27 +320,26 @@ export default function AdminCaseView() {
       <div className="mb-3 flex justify-end">
         <button
           onClick={() => setIsTimelineOpen(true)}
-          className="border border-red-500/40 bg-red-500/10 px-3 py-2 text-[10px] font-bold tracking-widest text-red-400 transition-colors hover:bg-red-500 hover:text-black"
+          className="h-10 rounded-lg border border-red-500/35 bg-red-500/[0.12] px-4 text-[13px] font-medium text-red-200 transition-colors hover:border-red-400/60 hover:bg-red-500/20 hover:text-white"
         >
-          VIEW TIMELINE ({incidentsList.length})
+          Timeline ({incidentsList.length})
         </button>
       </div>
 
-      {/* Tabs Header */}
-      <div className="border-b border-white/10 mb-6 flex gap-6 text-xs font-bold overflow-x-auto">
+      <div className="mb-6 flex gap-5 overflow-x-auto border-b border-white/10 text-[13px]">
         {[
-          { key: "sources", label: `RAW EVIDENCE (${caseData.sources?.length || 0})` },
-          { key: "persons", label: `IDENTIFIED PERSONS (${personsList.length})` },
-          { key: "unknowns", label: `UNKNOWN IDENTITIES (${unknownsList.length})` },
-          { key: "incidents", label: `INCIDENTS (${incidentsList.length})` },
-          { key: "relations", label: `RELATIONSHIPS (${relationsList.length})` },
-          { key: "graph", label: `NETWORK GRAPH` },
+          { key: "sources", label: `Evidence (${caseData.sources?.length || 0})` },
+          { key: "persons", label: `People (${personsList.length})` },
+          { key: "unknowns", label: `Unknown identities (${unknownsList.length})` },
+          { key: "incidents", label: `Incidents (${incidentsList.length})` },
+          { key: "relations", label: `Relationships (${relationsList.length})` },
+          { key: "graph", label: "Network" },
         ].map((t) => (
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key as ActiveTab)}
-            className={`pb-3 border-b-2 transition-all whitespace-nowrap ${
-              activeTab === t.key ? "border-red-500 text-red-400" : "border-transparent text-neutral-500 hover:text-neutral-300"
+            className={`whitespace-nowrap border-b-2 pb-3 ${
+              activeTab === t.key ? "border-red-500 text-red-300" : "border-transparent text-neutral-500 hover:text-neutral-300"
             }`}
           >
             {t.label}
@@ -325,20 +351,20 @@ export default function AdminCaseView() {
       {activeTab === "sources" && (
         <div>
           {!caseData.sources || caseData.sources.length === 0 ? (
-            <div className="border border-white/10 bg-white/[0.01] p-8 text-center text-xs text-neutral-500">
-              No intelligence sources have been ingested yet by the investigator.
+            <div className="rounded-lg border border-white/10 bg-white/[0.01] p-8 text-center text-[13px] text-neutral-500">
+              No files have been added to this case yet.
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {caseData.sources.map((s: SourceData, i: number) => (
                 <div
                   key={i}
                   onClick={() => setPreviewSource(s)}
-                  className="border border-white/10 bg-white/[0.02] p-4 cursor-pointer hover:border-red-500/40 transition-colors"
+                  className="cursor-pointer rounded-lg border border-white/10 bg-white/[0.02] p-4 hover:border-red-500/40"
                 >
-                  <span className="text-[9px] px-2 py-0.5 bg-red-500/10 text-red-400 font-bold">{s.type}</span>
-                  <div className="text-xs font-bold text-white mt-2 truncate">{s.title}</div>
-                  <div className="text-[10px] text-neutral-500 mt-1">Click to view ↗</div>
+                  <span className="text-[11px] text-red-400">{humanize(s.type)}</span>
+                  <div className="mt-2 truncate text-[14px] font-medium text-white">{s.title}</div>
+                  <div className="mt-1 text-[12px] text-neutral-500">Open</div>
                 </div>
               ))}
             </div>
@@ -350,35 +376,35 @@ export default function AdminCaseView() {
       {activeTab === "persons" && (
         <div className="space-y-3">
           {personsList.length > 0 ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {personsList.map((item: PersonRecord, idx: number) => {
                 const p = item.person || item;
-                const name = p.identity?.name || p.name || p.canonical_name || "Unnamed Person";
-                const role = (item.roles && item.roles[0]) || p.role || "PERSON OF INTEREST";
+                const name = p.identity?.name || p.name || p.canonical_name || "Unnamed person";
+                const role = humanize((item.roles && item.roles[0]) || p.role, "Person of interest");
                 const phone = p.contact?.phones?.[0] || p.phone || null;
                 const address = p.addresses?.[0]?.text || null;
                 const aliases = p.identity?.aliases?.join(", ") || null;
 
                 return (
-                  <div key={idx} className="border border-white/10 bg-white/[0.02] p-4 flex flex-col justify-between">
+                  <div key={idx} className="flex flex-col justify-between rounded-lg border border-white/10 bg-white/[0.02] p-4">
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs font-bold text-white">{name}</div>
-                        <span className="text-[9px] px-2 py-0.5 bg-red-500/10 border border-red-500/30 text-red-400 font-bold uppercase">
+                        <div className="text-[14px] font-medium text-white">{name}</div>
+                        <span className="rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-300">
                           {role}
                         </span>
                       </div>
-                      {aliases && <div className="text-[10px] text-red-400/80 mt-1">aka {aliases}</div>}
-                      {phone && <div className="text-[11px] text-neutral-400 mt-2">📞 {phone}</div>}
-                      {address && <div className="text-[11px] text-neutral-500 mt-1">📍 {address}</div>}
+                      {aliases && <div className="mt-1 text-[12px] text-neutral-400">Also known as {aliases}</div>}
+                      {phone && <div className="mt-2 text-[13px] text-neutral-400">{phone}</div>}
+                      {address && <div className="mt-1 text-[13px] text-neutral-500">{address}</div>}
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="p-6 border border-dashed border-zinc-800 rounded text-center text-zinc-500 text-sm">
-              No identified persons detected in this case dossier.
+            <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-[13px] text-zinc-500">
+              No people have been identified in this case yet.
             </div>
           )}
         </div>
@@ -386,27 +412,27 @@ export default function AdminCaseView() {
 
       {/* Tab 3: Unknowns */}
       {activeTab === "unknowns" && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {unknownsList.length === 0 ? (
-            <div className="col-span-2 text-xs text-neutral-500 p-8 text-center border border-white/5">
-              No unidentified operators or shadowy handles flagged.
+            <div className="col-span-full rounded-lg border border-white/5 p-8 text-center text-[13px] text-neutral-500">
+              No unknown identities in this case.
             </div>
           ) : (
             unknownsList.map((u: UnknownIdentityRecord, idx: number) => (
-              <div key={idx} className="border border-red-500/30 bg-red-950/10 p-4 rounded flex flex-col justify-between">
+              <div key={idx} className="flex flex-col justify-between rounded-lg border border-red-500/30 bg-red-950/10 p-4">
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-red-400">🎭 {u.label || u.alias || "Unknown Node"}</span>
-                    <span className="text-[9px] px-2 py-0.5 bg-red-900/40 border border-red-700/50 text-red-300 font-bold uppercase">
-                      {u.status || "UNIDENTIFIED"}
+                    <span className="text-[14px] font-medium text-red-300">{u.label || u.alias || "Unknown person"}</span>
+                    <span className="rounded border border-red-700/50 bg-red-900/40 px-2 py-0.5 text-[11px] text-red-200">
+                      {humanize(u.status, "Unidentified")}
                     </span>
                   </div>
-                  <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
-                    {u.description?.replace(/^Unidentified Node:\s*/i, "") || "Unidentified accomplice in network."}
+                  <p className="mt-2 text-[13px] leading-6 text-zinc-400">
+                    {u.description?.replace(/^Unidentified Node:\s*/i, "") || "Identity is not confirmed yet."}
                   </p>
                 </div>
-                <div className="mt-3 text-[10px] text-neutral-500">
-                  ROLE: {u.roles?.[0] || "UNKNOWN"}
+                <div className="mt-3 text-[12px] text-neutral-500">
+                  Role: {humanize(u.roles?.[0], "Unknown")}
                 </div>
               </div>
             ))
@@ -419,23 +445,25 @@ export default function AdminCaseView() {
         <div className="space-y-3">
           {incidentsList.length > 0 ? (
             incidentsList.map((inc: IncidentRecord, idx: number) => (
-              <div key={idx} className="p-4 border border-zinc-800 bg-zinc-950 rounded">
+              <div key={idx} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-red-400 uppercase tracking-wide">
-                    {inc.time?.start ? `DATE LOGGED: ${inc.time.start}` : "INCIDENT LOG"}
+                  <span className="text-[13px] font-medium text-red-300">
+                    {inc.time?.start ? inc.time.start : "Incident"}
                   </span>
-                  <span className="text-[9px] px-2 py-0.5 bg-zinc-900 border border-zinc-700 text-zinc-400">
-                    {inc.extraction?.method || "PARSED"}
-                  </span>
+                  {inc.extraction?.method && (
+                    <span className="rounded border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400">
+                      {humanize(inc.extraction.method)}
+                    </span>
+                  )}
                 </div>
 
-                <p className="text-xs text-zinc-300 mt-2 leading-relaxed">
+                <p className="mt-2 text-[13px] leading-6 text-zinc-300">
                   {inc.description || inc.title}
                 </p>
 
                 {inc.key_points && inc.key_points.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-zinc-900">
-                    <div className="text-[10px] text-zinc-500 font-bold uppercase mb-2">Key Extracted Points:</div>
+                  <div className="mt-3 border-t border-zinc-900 pt-3">
+                    <div className="mb-2 text-[12px] text-zinc-500">Key points</div>
                     <ul className="space-y-1">
                       {inc.key_points.map((pt: string, i: number) => (
                         <li key={i} className="text-[11px] text-zinc-400 flex items-start gap-2">
@@ -449,8 +477,8 @@ export default function AdminCaseView() {
               </div>
             ))
           ) : (
-            <div className="p-6 border border-dashed border-zinc-800 rounded text-center text-zinc-500 text-sm">
-              No incident statements recorded.
+            <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-[13px] text-zinc-500">
+              No incidents recorded yet.
             </div>
           )}
         </div>
@@ -461,7 +489,7 @@ export default function AdminCaseView() {
         <div className="space-y-2">
           {relationsList.length === 0 ? (
             <div className="text-xs text-neutral-500 p-8 text-center border border-white/5">
-              No linked network entities recorded.
+              No relationships recorded yet.
             </div>
           ) : (
             relationsList.map((rel: RelationRecord, idx: number) => {
@@ -472,8 +500,8 @@ export default function AdminCaseView() {
                 <div key={idx} className="border border-zinc-800 bg-zinc-950 p-4 rounded">
                   <div className="flex items-center justify-between border-b border-zinc-900 pb-2 mb-2">
                     <span className="text-xs font-bold text-white">{fromName}</span>
-                    <span className="px-2.5 py-0.5 bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] font-bold uppercase">
-                      ── {rel.type || "LINKED_TO"} ──▶
+                    <span className="rounded border border-red-500/30 bg-red-500/10 px-2.5 py-0.5 text-[12px] text-red-300">
+                      {humanize(rel.type, "Linked to")}
                     </span>
                     <span className="text-xs font-bold text-white">{toName}</span>
                   </div>
@@ -494,25 +522,25 @@ export default function AdminCaseView() {
         <div className="border border-zinc-800 bg-zinc-950 p-6 rounded space-y-6">
           <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
             <div>
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                Interactive Link Analysis Network
+              <h3 className="text-[14px] font-medium text-white">
+                Network map
               </h3>
-              <p className="text-[11px] text-zinc-500 mt-0.5">
-                Visual entity map generated via AI case reasoning
+              <p className="mt-0.5 text-[13px] text-zinc-500">
+                People and connections found in this case
               </p>
             </div>
-            <span className="text-[10px] bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded text-neutral-400">
-              {graphNodes.length} Entities • {graphEdges.length} Links
+            <span className="rounded border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-[12px] text-neutral-400">
+              {graphNodes.length} people · {graphEdges.length} links
             </span>
           </div>
 
           {loadingGraph ? (
             <div className="p-12 text-center text-xs text-neutral-500">
-              Generating graph layout...
+              Building the network map…
             </div>
           ) : graphNodes.length === 0 ? (
             <div className="p-12 text-center text-xs text-neutral-500 border border-dashed border-zinc-850 rounded">
-              No graph entities found. Run Analysis first.
+              No network to show yet. Run analysis first.
             </div>
           ) : (
             <div className="space-y-6">
@@ -629,8 +657,8 @@ export default function AdminCaseView() {
               </div>
 
               <div className="space-y-2">
-                <div className="text-[10px] text-neutral-400 font-bold uppercase mb-2">
-                  Targeted Links & Evidence
+                <div className="mb-2 text-[12px] text-neutral-400">
+                  Connections
                 </div>
                 {graphEdges.map((e, i) => {
                   const fId = (typeof e.from === "object" ? e.from?.id : e.from) || e.source || "";
@@ -645,8 +673,8 @@ export default function AdminCaseView() {
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-white font-bold">{fLabel}</span>
-                        <span className="text-red-400 font-bold px-2 text-[10px] bg-red-500/10 border border-red-500/30 rounded py-0.5">
-                          ──[{e.type || "LINKED_TO"}]──▶
+                        <span className="rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-300">
+                          {humanize(e.type, "Linked to")}
                         </span>
                         <span className="text-white font-bold">{tLabel}</span>
                       </div>
@@ -666,26 +694,26 @@ export default function AdminCaseView() {
 
       {/* Node Inspector Slide-over Panel */}
       {selectedNode && (
-        <div className="fixed inset-y-0 right-0 w-96 bg-[#0a0a0c] border-l border-zinc-800 p-6 z-50 shadow-2xl flex flex-col justify-between font-mono">
+        <div className="fixed inset-y-0 right-0 z-50 flex w-96 flex-col justify-between border-l border-zinc-800 bg-[#0a0a0c] p-6 shadow-2xl">
           <div>
-            <div className="flex items-center justify-between border-b border-zinc-850 pb-4 mb-5">
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/30 uppercase">
-                {selectedNode.type || "ENTITY"}
+            <div className="mb-5 flex items-center justify-between border-b border-zinc-800 pb-4">
+              <span className="rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[12px] text-red-300">
+                {humanize(selectedNode.type, "Person")}
               </span>
               <button
                 onClick={() => setSelectedNode(null)}
-                className="text-neutral-500 hover:text-white text-sm"
+                className="text-[13px] text-neutral-500 hover:text-white"
               >
-                ✕
+                Close
               </button>
             </div>
 
-            <h2 className="text-lg font-bold text-white mb-2">{selectedNode.label || selectedNode.id}</h2>
-            <p className="text-xs text-neutral-400 mb-6 break-all">ID: {selectedNode.id}</p>
+            <h2 className="mb-2 text-lg font-semibold text-white">{selectedNode.label || selectedNode.id}</h2>
+            <p className="mb-6 break-all text-[12px] text-neutral-500">Ref: {selectedNode.id}</p>
 
             <div className="space-y-3">
-              <div className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
-                Connected Edges & Intelligence
+              <div className="text-[13px] text-neutral-400">
+                Connections
               </div>
               <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
                 {graphEdges
@@ -702,8 +730,8 @@ export default function AdminCaseView() {
 
                     return (
                       <div key={idx} className="p-3 bg-zinc-950 border border-zinc-850 rounded text-xs">
-                        <div className="text-[10px] text-red-400 font-bold mb-1">
-                          {isSource ? "OUTGOING ──▶" : "◀── INCOMING"} [{edge.type || "LINKED"}]
+                        <div className="mb-1 text-[12px] text-red-300">
+                          {isSource ? "To" : "From"} · {humanize(edge.type, "Linked")}
                         </div>
                         <div className="text-zinc-200 font-bold">
                           {targetNode?.label || (isSource ? toId : fromId)}
@@ -722,9 +750,9 @@ export default function AdminCaseView() {
 
           <button
             onClick={() => setSelectedNode(null)}
-            className="w-full mt-4 py-2 border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-neutral-300 text-xs font-bold rounded transition-colors"
+            className="mt-4 w-full rounded-lg border border-zinc-700 bg-zinc-900 py-2 text-[13px] text-neutral-300 transition-colors hover:bg-zinc-800"
           >
-            CLOSE INSPECTOR
+            Close
           </button>
         </div>
       )}
@@ -741,9 +769,9 @@ export default function AdminCaseView() {
             <div className="mb-2 flex justify-end">
               <button
                 onClick={() => setIsTimelineOpen(false)}
-                className="border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-neutral-400 hover:border-red-500 hover:text-white"
+                className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-[13px] text-neutral-400 hover:border-red-500 hover:text-white"
               >
-                ✕ CLOSE
+                Close
               </button>
             </div>
             <CaseTimelineView incidents={incidentsList} themeColor="red" />
@@ -757,8 +785,8 @@ export default function AdminCaseView() {
           <div className="flex h-[80vh] w-full max-w-3xl flex-col border border-white/20 bg-[#0c0c0d] shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
               <div className="flex items-center gap-3">
-                <span className="bg-red-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-red-400">
-                  {previewSource.type}
+                <span className="bg-red-500/10 px-2 py-0.5 text-[12px] text-red-400">
+                  {humanize(previewSource.type)}
                 </span>
                 <h3 className="max-w-md truncate text-sm font-bold text-white">{previewSource.title}</h3>
               </div>
@@ -784,15 +812,15 @@ export default function AdminCaseView() {
                   <div className="text-4xl mb-3">📁</div>
                   <h4 className="text-sm font-bold text-white mb-2">{previewSource.title}</h4>
                   <p className="text-xs text-neutral-400 mb-6">
-                    File attached by investigator. Download to inspect the full contents.
+                    File attached by the investigator. Download to review the full contents.
                   </p>
                   {previewSource.content.startsWith("data:") ? (
                     <a
                       href={previewSource.content}
                       download={previewSource.title}
-                      className="bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-6 py-3 transition-colors"
+                      className="bg-red-600 px-6 py-3 text-[13px] font-medium text-white transition-colors hover:bg-red-500"
                     >
-                      DOWNLOAD FILE ⤓
+                      Download file
                     </a>
                   ) : (
                     <span className="text-xs text-red-400">Invalid file data.</span>
@@ -803,6 +831,7 @@ export default function AdminCaseView() {
           </div>
         </div>
       )}
+    </div>
     </div>
 
     {/* Printable Forensic Dossier */}

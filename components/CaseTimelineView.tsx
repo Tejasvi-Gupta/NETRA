@@ -32,21 +32,21 @@ export default function CaseTimelineView({
     <div className="border border-zinc-800 bg-zinc-950 p-6 rounded">
       <div className="flex justify-between items-center mb-6 pb-3 border-b border-zinc-900">
         <div>
-          <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-            Chronological Investigation Timeline
+          <h3 className="text-[14px] font-medium text-white">
+            Timeline
           </h3>
-          <p className="text-[11px] text-zinc-500 mt-0.5">
-            Sequence of crimes, seizures, intercepts, and raid statements
+          <p className="mt-0.5 text-[13px] text-zinc-500">
+            Events in this case, in order
           </p>
         </div>
-        <span className="text-[10px] bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded text-neutral-400">
-          {incidents.length} Chronological Events
+        <span className="rounded border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-[12px] text-neutral-400">
+          {incidents.length} {incidents.length === 1 ? "event" : "events"}
         </span>
       </div>
 
       {incidents.length === 0 ? (
         <div className="p-12 text-center text-xs text-neutral-500 border border-dashed border-zinc-800 rounded">
-          No chronological timeline points logged yet. Trigger AI analysis first.
+          No timeline events yet. Run analysis first.
         </div>
       ) : (
         <div className="relative border-l border-zinc-800 ml-4 pl-6 space-y-8 my-4">
@@ -62,25 +62,27 @@ export default function CaseTimelineView({
               >
                 <div className="flex items-center justify-between gap-4 mb-2">
                   <span className={`text-xs font-bold font-mono tracking-wide ${textAccent}`}>
-                    {inc.time?.start ? `⏰ ${inc.time.start}` : `EVENT #${idx + 1}`}
+                    {inc.time?.start ? inc.time.start : `Event ${idx + 1}`}
                   </span>
-                  <span className={`text-[9px] px-2 py-0.5 border font-bold uppercase rounded ${badgeBg}`}>
-                    {inc.extraction?.method || "EVIDENCE PARSED"}
-                  </span>
+                  {inc.extraction?.method && (
+                    <span className={`rounded border px-2 py-0.5 text-[11px] ${badgeBg}`}>
+                      {inc.extraction.method.replace(/[_-]+/g, " ")}
+                    </span>
+                  )}
                 </div>
 
-                <h4 className="text-sm font-bold text-white mb-2">
-                  {inc.title || "Incident Report Log"}
+                <h4 className="mb-2 text-[14px] font-medium text-white">
+                  {inc.title || "Incident"}
                 </h4>
 
-                <p className="text-xs text-zinc-300 leading-relaxed">
-                  {inc.description || inc.summary || "No specific narrative captured."}
+                <p className="text-[13px] leading-6 text-zinc-300">
+                  {inc.description || inc.summary || "No details recorded."}
                 </p>
 
                 {inc.key_points && inc.key_points.length > 0 && (
-                  <div className="mt-3 pt-2.5 border-t border-zinc-800/60">
-                    <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider block mb-1.5">
-                      Extracted Intel Points:
+                  <div className="mt-3 border-t border-zinc-800/60 pt-2.5">
+                    <span className="mb-1.5 block text-[12px] text-neutral-500">
+                      Key points
                     </span>
                     <ul className="space-y-1">
                       {inc.key_points.map((pt, i) => (

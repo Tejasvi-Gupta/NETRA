@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import ChatbotWidget from "@/components/ChatbotWidget";
 
 interface CaseItem {
   _id: string;
@@ -56,7 +55,7 @@ export default function AdminDashboardPage() {
       setError(null);
 
       const [casesRes, actRes] = await Promise.all([
-        fetch("/api/cases?limit=5").then((r) => r.json()),
+        fetch("/api/cases").then((r) => r.json()),
         fetch("/api/activities").then((r) => r.json()),
       ]);
 
@@ -94,6 +93,8 @@ export default function AdminDashboardPage() {
       (c) => c.title.toLowerCase().includes(q) || c.case_code.toLowerCase().includes(q)
     );
   }, [cases, search]);
+
+  const visibleCases = filteredCases.slice(0, 5);
 
   const dateStr = now
     .toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })
@@ -143,7 +144,7 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#050505] font-mono text-neutral-200">
+    <div className="relative min-h-screen overflow-x-hidden bg-[#050505] font-mono text-neutral-200">
       <div
         className="pointer-events-none fixed inset-0 opacity-[0.05]"
         style={{
@@ -156,56 +157,60 @@ export default function AdminDashboardPage() {
       <div className="pointer-events-none fixed -left-40 -top-40 h-[600px] w-[600px] rounded-full bg-red-600/10 blur-[130px]" />
       <div className="pointer-events-none fixed -bottom-40 right-0 h-[500px] w-[500px] rounded-full bg-orange-600/10 blur-[130px]" />
 
-      <div className="relative z-10 max-w-[1180px] mx-auto px-8 py-10">
-        <div className="flex items-center gap-2 text-[11px] tracking-[2px] text-neutral-500 mb-5">
-          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-          OVERVIEW / {dateStr}
+      <div className="relative z-10 mx-auto max-w-[1180px] px-4 py-8 pb-28 sm:px-8 sm:py-10">
+        <div className="mb-5 flex items-center gap-2 text-[11px] tracking-[2px] text-neutral-500">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500 animate-pulse" />
+          <span className="min-w-0 break-words">OVERVIEW / {dateStr}</span>
         </div>
 
-        <div className="flex items-start justify-between flex-wrap gap-6 mb-6">
-          <div>
-            <h1 className="text-[36px] font-black text-white tracking-tight">Command Overview</h1>
-            <p className="text-[13px] text-neutral-500 mt-2">Full-system view of active investigations and personnel.</p>
+        <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-[28px] font-semibold tracking-tight text-white sm:text-[36px]">Intelligence Workspace</h1>
+            <p className="mt-2 text-[13px] leading-6 text-neutral-500">
+              Full-system view of active investigations and personnel.
+            </p>
           </div>
 
-          <div className="flex items-center gap-5">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-3 lg:w-auto">
             <button
               onClick={() => router.push("/cases/new")}
-              className="border border-red-500/40 bg-red-500/10 px-4 py-2.5 text-[11px] font-bold tracking-wide text-red-300 hover:border-red-500 hover:bg-red-500/15 transition-all"
+              className="h-10 shrink-0 rounded-lg border border-red-500/35 bg-red-500/[0.12] px-4 text-[11px] font-semibold tracking-[0.12em] text-red-200 transition-colors hover:border-red-400/60 hover:bg-red-500/20 hover:text-white"
             >
               + ADD NEW CASE
             </button>
 
-            <div className="flex items-center gap-2 px-3.5 py-2 border border-white/10 bg-white/[0.02] min-w-[220px]">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b6b6b" strokeWidth="2">
+            <label className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-white/[0.12] bg-white/[0.04] px-3.5 transition-colors focus-within:border-white/25 focus-within:bg-white/[0.07] sm:min-w-[220px] lg:w-[260px] lg:flex-none">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" strokeWidth="1.75" aria-hidden>
                 <circle cx="11" cy="11" r="7" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search intelligence"
-                className="bg-transparent border-none outline-none text-neutral-200 text-xs w-full placeholder:text-neutral-600"
+                placeholder="Search cases"
+                className="w-full min-w-0 bg-transparent text-[13px] text-neutral-100 outline-none placeholder:text-neutral-500"
               />
-            </div>
+            </label>
 
             <div className="relative" ref={avatarRef}>
               <button
                 onClick={() => setAvatarOpen((o) => !o)}
-                className="w-[36px] h-[36px] rounded-full bg-red-500/10 border border-red-500/40 flex items-center justify-center text-xs text-red-400 font-black hover:border-red-500 transition-all"
+                className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-[#161010] text-[12px] font-semibold tracking-wide text-red-200 transition-colors hover:border-white/25 hover:text-white"
+                aria-label="Admin menu"
               >
+                <span className="pointer-events-none absolute inset-x-1.5 top-0 h-[42%] rounded-full bg-gradient-to-b from-white/[0.08] to-transparent" />
                 A
               </button>
 
               {avatarOpen && (
-                <div className="absolute right-0 top-[calc(100%+10px)] w-52 border border-red-500/25 bg-[#0a0a0a] shadow-[0_0_30px_rgba(0,0,0,0.6)] z-20">
+                <div className="absolute right-0 top-[calc(100%+10px)] z-20 w-52 overflow-hidden rounded-xl border border-white/15 bg-[#0c0c0e]/80 shadow-[0_18px_40px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-xl">
                   <div className="px-4 py-3 border-b border-white/10">
                     <div className="text-[13px] font-bold text-white">Admin</div>
                     <div className="text-[10px] text-neutral-500 mt-0.5">System Administrator</div>
                   </div>
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-2 px-4 py-3 text-left text-[12px] text-red-400 hover:bg-red-500/10 transition-colors"
+                    className="w-full flex items-center gap-2 px-4 py-3 text-left text-[12px] text-red-400 hover:bg-white/5 transition-colors"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -232,7 +237,7 @@ export default function AdminDashboardPage() {
           SITUATION SUMMARY
         </div>
 
-        <div className="grid grid-cols-4 gap-4 mb-12">
+        <div className="mb-12 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
             { label: "Active Cases", value: summary.activeCount },
             { label: "High-Risk Cases", value: summary.highRiskCount },
@@ -241,23 +246,25 @@ export default function AdminDashboardPage() {
           ].map((s) => (
             <div
               key={s.label}
-              className="border border-white/10 bg-white/[0.02] p-5 hover:border-red-500/30 transition-colors"
+              className="min-w-0 border border-white/10 bg-white/[0.02] p-5 hover:border-red-500/30 transition-colors"
             >
-              <div className="text-xs text-neutral-500">{s.label}</div>
-              <div className="text-[36px] font-black text-red-500 mt-3">{loading ? "—" : s.value}</div>
+              <div className="text-xs leading-5 text-neutral-500">{s.label}</div>
+              <div className="mt-3 truncate text-[32px] font-semibold leading-none text-red-500 sm:text-[36px]">
+                {loading ? "—" : s.value}
+              </div>
             </div>
           ))}
         </div>
 
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs tracking-[3px] font-bold text-neutral-200">ACTIVE INVESTIGATIONS</div>
-          <button onClick={() => router.push("/cases")} className="text-[11px] tracking-wide text-red-500 hover:underline flex items-center gap-1">
+          <button onClick={() => router.push("/cases")} className="text-[11px] tracking-wide text-red-500 hover:underline">
             VIEW ALL CASES →
           </button>
         </div>
 
         <div className="mb-12 border border-white/10 bg-white/[0.01]">
-          <div className="grid grid-cols-[2fr_1.2fr_1fr_1fr_1fr_24px] px-5 py-3 text-[10px] tracking-wide text-neutral-500 border-b border-white/10">
+          <div className="hidden border-b border-white/10 px-6 py-3.5 text-[10px] tracking-wide text-neutral-500 lg:grid lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_auto_auto_auto_1rem] lg:items-center lg:gap-x-6">
             <div>CASE ID / TITLE</div>
             <div>INVESTIGATOR(S)</div>
             <div>PRIORITY</div>
@@ -268,32 +275,37 @@ export default function AdminDashboardPage() {
 
           {loading ? (
             <div className="py-8 text-center text-xs text-neutral-500">Loading cases…</div>
-          ) : filteredCases.length === 0 ? (
+          ) : visibleCases.length === 0 ? (
             <div className="py-8 text-center text-xs text-neutral-500">No matching cases found.</div>
           ) : (
-            filteredCases.map((c) => (
+            visibleCases.map((c) => (
               <div
                 key={c._id}
                 onClick={() => {
                   setSelectedCaseCode(c.case_code);
                   router.push(`/admin/cases/${c.case_code}`);
                 }}
-                className={`grid grid-cols-[2fr_1.2fr_1fr_1fr_1fr_24px] items-center px-5 py-4 border-b border-white/5 cursor-pointer transition-colors hover:bg-red-500/[0.03] ${
-                  selectedCaseCode === c.case_code ? "bg-red-500/[0.05] border-l-2 border-l-red-500 pl-[18px]" : ""
+                className={`cursor-pointer border-b border-white/5 px-4 py-4 transition-colors hover:bg-red-500/[0.03] lg:grid lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_auto_auto_auto_1rem] lg:items-center lg:gap-x-6 lg:px-6 lg:py-5 ${
+                  selectedCaseCode === c.case_code ? "bg-red-500/[0.05] shadow-[inset_2px_0_0_#ef4444]" : ""
                 }`}
               >
-                <div>
-                  <div className="text-[11px] text-red-500 tracking-wide">{c.case_code}</div>
-                  <div className="text-[15px] font-semibold text-white mt-1">{c.title}</div>
+                <div className="min-w-0">
+                  <div className="text-[11px] tracking-wide text-red-500">{c.case_code}</div>
+                  <div className="mt-1.5 text-[15px] font-semibold leading-6 break-words text-white">{c.title}</div>
                 </div>
-                <div className="text-[11px] text-neutral-400">{c.assigned_investigator}</div>
-                <div className={`flex items-center gap-1.5 text-[11px] tracking-wide ${priorityColor[c.priority]}`}>
-                  <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                  {c.priority}
+                <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 lg:mt-0 lg:contents">
+                  <div className="min-w-0 text-[12px] leading-5 text-neutral-400">
+                    <span className="mr-1 text-neutral-600 lg:hidden">Investigator</span>
+                    {c.assigned_investigator}
+                  </div>
+                  <div className={`flex items-center gap-2 text-[12px] tracking-wide ${priorityColor[c.priority]}`}>
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+                    {c.priority}
+                  </div>
+                  <div className={`text-[12px] tracking-wide ${statusColor[c.status]}`}>{c.status}</div>
+                  <div className="text-[12px] text-neutral-500">{relativeTime(c.last_signal_at)}</div>
+                  <div className="hidden text-sm text-neutral-600 lg:block">›</div>
                 </div>
-                <div className={`text-[11px] tracking-wide ${statusColor[c.status]}`}>{c.status}</div>
-                <div className="text-[11px] text-neutral-500">{relativeTime(c.last_signal_at)}</div>
-                <div className="text-neutral-600 text-sm">›</div>
               </div>
             ))
           )}
@@ -304,22 +316,22 @@ export default function AdminDashboardPage() {
           RECENT SYSTEM ACTIVITY
         </div>
 
-        <div className="mb-16 border border-white/10 bg-white/[0.01] p-6">
+        <div className="mb-8 border border-white/10 bg-white/[0.01] p-4 sm:p-6">
           {activity.length === 0 ? (
             <div className="py-8 text-center text-xs text-neutral-500">No system activity yet.</div>
           ) : (
-            <div className="relative pl-6 border-l border-white/10">
+            <div className="relative border-l border-white/10 pl-5 sm:pl-6">
               {activity.map((a) => (
                 <div key={a._id} className="relative mb-7 last:mb-0">
                   <span
-                    className={`absolute -left-[31px] top-1 h-2.5 w-2.5 rounded-full border-2 border-[#050505] ${
+                    className={`absolute -left-[23px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-[#050505] sm:-left-[31px] ${
                       activityDot[a.event_type] ?? "bg-neutral-500"
                     }`}
                   />
                   <div className="text-[10px] tracking-widest text-neutral-500">
                     {relativeTime(a.createdAt).toUpperCase()}
                   </div>
-                  <div className="mt-1 text-[13px] text-white">{a.description}</div>
+                  <div className="mt-1 pr-2 text-[13px] leading-6 break-words text-white">{a.description}</div>
                 </div>
               ))}
             </div>
@@ -327,7 +339,6 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      <ChatbotWidget />
     </div>
   );
 }

@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 
 type Priority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
+const fieldClass =
+  "mt-2 w-full rounded-lg border border-white/15 bg-[#111] px-3.5 py-3 text-[14px] text-white outline-none placeholder:text-neutral-500 focus:border-red-400/60";
+
 export default function NewCasePage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
@@ -17,7 +20,7 @@ export default function NewCasePage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) {
-      setError("Case title is required.");
+      setError("Please enter a case title.");
       return;
     }
 
@@ -38,7 +41,7 @@ export default function NewCasePage() {
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to create case.");
+        throw new Error(data.error || "Could not create the case.");
       }
 
       router.push("/admin/dashboard");
@@ -50,78 +53,113 @@ export default function NewCasePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050505] text-neutral-200 font-mono p-8 max-w-[800px] mx-auto">
-      <button onClick={() => router.back()} className="text-xs text-neutral-500 hover:text-white mb-6">
-        ← CANCEL
-      </button>
+    <div className="min-h-screen px-6 py-10">
+      <div className="mx-auto max-w-[640px]">
+        <button
+          onClick={() => router.back()}
+          className="text-[13px] text-neutral-400 transition-colors hover:text-white"
+        >
+          ← Cancel
+        </button>
 
-      <div className="border border-white/10 bg-[#0a0a0a] p-8">
-        <div className="text-xs text-red-500 font-bold tracking-widest uppercase mb-1">Dossier Initialization</div>
-        <h1 className="text-2xl font-black text-white mb-6">CREATE INVESTIGATION CASE</h1>
+        <div className="mt-6 rounded-xl border border-white/10 bg-[#0d0d0d] p-8">
+          <p className="text-[13px] text-neutral-400">New investigation</p>
+          <h1 className="mt-1 text-[28px] font-semibold tracking-tight text-white">Create case</h1>
+          <p className="mt-2 text-[14px] leading-6 text-neutral-400">
+            Add the basic details. You can upload sources and run analysis after the case is created.
+          </p>
 
-        {error && <div className="p-3 bg-red-500/10 border border-red-500/30 text-xs text-red-400 mb-6">{error}</div>}
+          {error && (
+            <div className="mt-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-[14px] text-red-300">
+              {error}
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-xs font-bold text-neutral-400 mb-2">CASE TITLE / PRIMARY TARGET</label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Syndicate Operation Alpha"
-              className="w-full bg-black border border-white/10 p-3 text-xs text-white outline-none focus:border-red-500"
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit} className="mt-8 space-y-7">
             <div>
-              <label className="block text-xs font-bold text-neutral-400 mb-2">CASE TYPE</label>
-              <select
-                value={caseType}
-                onChange={(e) => setCaseType(e.target.value)}
-                className="w-full bg-black border border-white/10 p-3 text-xs text-white outline-none focus:border-red-500"
-              >
-                <option value="Narcotics">Narcotics Cartel</option>
-                <option value="Financial Fraud">Financial / Hawala Fraud</option>
-                <option value="Cyber Syndicate">Cyber Extortion Ring</option>
-                <option value="Organized Crime">Organized Crime Syndicate</option>
-              </select>
+              <label htmlFor="case-title" className="block text-[13px] font-medium text-neutral-200">
+                Case title
+              </label>
+              <p className="mt-1 text-[12px] text-neutral-500">A short name the team will recognize.</p>
+              <input
+                id="case-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Example: Cross-border meth trafficking"
+                className={fieldClass}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <div>
+                <label htmlFor="case-type" className="block text-[13px] font-medium text-neutral-200">
+                  Case type
+                </label>
+                <select
+                  id="case-type"
+                  value={caseType}
+                  onChange={(e) => setCaseType(e.target.value)}
+                  className={fieldClass}
+                >
+                  <option value="Narcotics">Narcotics</option>
+                  <option value="Financial Fraud">Financial fraud</option>
+                  <option value="Cyber Syndicate">Cyber crime</option>
+                  <option value="Organized Crime">Organized crime</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="case-priority" className="block text-[13px] font-medium text-neutral-200">
+                  Priority
+                </label>
+                <select
+                  id="case-priority"
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value as Priority)}
+                  className={fieldClass}
+                >
+                  <option value="LOW">Low</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="HIGH">High</option>
+                  <option value="CRITICAL">Critical</option>
+                </select>
+              </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-neutral-400 mb-2">PRIORITY LEVEL</label>
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as Priority)}
-                className="w-full bg-black border border-white/10 p-3 text-xs text-white outline-none focus:border-red-500"
-              >
-                <option value="LOW">LOW</option>
-                <option value="MEDIUM">MEDIUM</option>
-                <option value="HIGH">HIGH</option>
-                <option value="CRITICAL">CRITICAL</option>
-              </select>
+              <label htmlFor="case-summary" className="block text-[13px] font-medium text-neutral-200">
+                Summary
+              </label>
+              <p className="mt-1 text-[12px] text-neutral-500">Optional. A few sentences is enough.</p>
+              <textarea
+                id="case-summary"
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                placeholder="What is known so far, and why this case was opened."
+                rows={5}
+                className={`${fieldClass} resize-y`}
+              />
             </div>
-          </div>
 
-          <div>
-            <label className="block text-xs font-bold text-neutral-400 mb-2">INTELLIGENCE SYNOPSIS</label>
-            <textarea
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              placeholder="Brief summary of intercepted intelligence..."
-              rows={4}
-              className="w-full bg-black border border-white/10 p-3 text-xs text-white outline-none focus:border-red-500"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full bg-red-600 hover:bg-red-500 text-white font-bold p-3 text-xs tracking-widest uppercase transition-all disabled:opacity-50"
-          >
-            {submitting ? "INITIALIZING DOSSIER & CONNECTING AI..." : "REGISTER CASE DOSSIER"}
-          </button>
-        </form>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className="rounded-lg px-4 py-2.5 text-[14px] text-neutral-400 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="rounded-lg bg-red-600 px-5 py-2.5 text-[14px] font-medium text-white hover:bg-red-500 disabled:opacity-50"
+              >
+                {submitting ? "Creating case…" : "Create case"}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

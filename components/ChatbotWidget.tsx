@@ -32,25 +32,34 @@ export default function ChatbotWidget() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 font-mono">
+    <div className="fixed bottom-6 right-6 z-50 font-mono print:hidden">
       {open && (
-        <div className="mb-3 flex h-[440px] w-[340px] flex-col border border-red-500/25 bg-[#0a0a0a] shadow-[0_0_40px_rgba(239,68,68,0.15)]">
-          <div className="flex items-center justify-between border-b border-red-500/20 bg-red-500/[0.04] px-4 py-3">
+        <div className="relative mb-3 flex h-[440px] w-[340px] flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0c0c0e]/70 shadow-[0_24px_64px_rgba(0,0,0,0.55),0_0_36px_rgba(239,68,68,0.12),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-white/12 via-red-500/[0.06] to-transparent" />
+          <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-red-500/15 blur-3xl" />
+
+          <div className="relative flex items-center justify-between border-b border-white/10 px-4 py-3">
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)] animate-pulse" />
               <span className="text-[11px] font-bold tracking-[0.15em] text-white">NETRA COPILOT</span>
             </div>
-            <button onClick={() => setOpen(false)} className="text-neutral-500 hover:text-red-400 text-sm">✕</button>
+            <button
+              onClick={() => setOpen(false)}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-white/10 hover:text-red-300"
+              aria-label="Close copilot"
+            >
+              ✕
+            </button>
           </div>
 
-          <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+          <div ref={scrollRef} className="relative flex-1 space-y-3 overflow-y-auto px-4 py-4">
             {messages.map((m) => (
               <div key={m.id} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[85%] px-3 py-2 text-[12px] leading-relaxed ${
+                  className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[12px] leading-relaxed shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] ${
                     m.sender === "user"
-                      ? "bg-red-500/10 border border-red-500/25 text-red-100"
-                      : "bg-white/[0.03] border border-white/10 text-neutral-300"
+                      ? "rounded-br-md border border-red-400/25 bg-gradient-to-b from-red-500/25 to-red-500/10 text-red-50"
+                      : "rounded-bl-md border border-white/10 bg-white/[0.06] text-neutral-200"
                   }`}
                 >
                   {m.text}
@@ -59,16 +68,19 @@ export default function ChatbotWidget() {
             ))}
           </div>
 
-          <div className="border-t border-red-500/20 p-3">
-            <div className="flex items-center gap-2 border border-neutral-800 bg-[#050505] px-3 py-2">
+          <div className="relative border-t border-white/10 p-3">
+            <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-3.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-md">
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
                 placeholder="Ask NETRA Copilot…"
-                className="flex-1 bg-transparent text-[12px] text-neutral-200 outline-none placeholder:text-neutral-600"
+                className="flex-1 bg-transparent text-[12px] text-neutral-200 outline-none placeholder:text-neutral-500"
               />
-              <button onClick={handleSend} className="text-red-400 hover:text-red-300 text-[11px] font-bold tracking-wide">
+              <button
+                onClick={handleSend}
+                className="rounded-full bg-gradient-to-b from-red-500 to-red-600 px-3 py-1 text-[11px] font-bold tracking-wide text-white shadow-[0_4px_12px_rgba(239,68,68,0.35),inset_0_1px_0_rgba(255,255,255,0.25)] hover:from-red-400 hover:to-red-500"
+              >
                 SEND
               </button>
             </div>
@@ -78,7 +90,7 @@ export default function ChatbotWidget() {
 
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex h-14 w-14 items-center justify-center rounded-full border border-red-500/40 bg-[#0a0a0a] text-red-400 shadow-[0_0_30px_rgba(239,68,68,0.25)] transition-transform hover:scale-105 hover:border-red-500 hover:text-red-300"
+        className="flex h-14 w-14 items-center justify-center rounded-full border border-white/20 bg-gradient-to-b from-[#2a1212] to-[#0a0a0a] text-red-300 shadow-[0_10px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(239,68,68,0.28),inset_0_1px_0_rgba(255,255,255,0.2)] transition-transform hover:scale-105 hover:text-red-200"
       >
         {open ? (
           <span className="text-lg">✕</span>
