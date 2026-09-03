@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import CaseChatDrawer from "@/components/CaseChatDrawer";
 import CaseTimelineView from "@/components/CaseTimelineView";
@@ -17,6 +17,7 @@ interface SourceData {
 interface PersonProfile {
   identity?: { name?: string; aliases?: string[] };
   person_id?: string;
+  id?: string;
   name?: string;
   canonical_name?: string;
   role?: string;
@@ -55,6 +56,7 @@ interface RelationRecord {
   target?: string;
   type?: string;
   evidence?: string;
+  source_type?: string;
 }
 
 interface AiExtractedData {
@@ -104,6 +106,13 @@ interface AnalysisResult {
   [key: string]: unknown;
 }
 
+interface NexusMatch {
+  suspectName: string;
+  matchedCaseCode: string;
+  matchedCaseTitle: string;
+  matchType: string;
+}
+
 type ActiveTab = "sources" | "persons" | "unknowns" | "incidents" | "relations" | "graph";
 
 export default function CaseWorkspace() {
@@ -131,16 +140,71 @@ export default function CaseWorkspace() {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+  const [nexusMatches, setNexusMatches] = useState<NexusMatch[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showAddRelModal, setShowAddRelModal] = useState(false);
+  const [relSource, setRelSource] = useState("");
+  const [relTarget, setRelTarget] = useState("");
+  const [relType, setRelType] = useState("COLLABORATOR");
+  const [relEvidence, setRelEvidence] = useState("");
+  const [relSubmitting, setRelSubmitting] = useState(false);
 
   const docInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
+
+  const logActivity = async (action: string) => {
+    try {
+      await fetch(`/api/cases/${caseCode}/activity`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, actor: "INVESTIGATOR" }),
+      });
+    } catch (error) {
+      console.error("Failed to log activity:", error);
+    }
+  };
+
+  const handleAddRelation = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!relSource || !relTarget || relSubmitting) return;
+
+    setRelSubmitting(true);
+    try {
+      const res = await fetch(`/api/cases/${caseCode}/relations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: relSource,
+          target: relTarget,
+          type: relType,
+          evidence: relEvidence,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        void logActivity(`Added manual relation link: ${relSource} -> ${relTarget} [${relType}]`);
+        setShowAddRelModal(false);
+        setRelSource("");
+        setRelTarget("");
+        setRelEvidence("");
+        await fetchCase();
+      } else {
+        alert(data.error || "Failed to create relation link.");
+      }
+    } catch (error) {
+      console.error("Failed to link relations:", error);
+    } finally {
+      setRelSubmitting(false);
+    }
+  };
 
   const fetchCase = useCallback(async () => {
     const res = await fetch("/api/cases");
     const data = await res.json();
     if (data.success) {
       const found = data.cases.find((c: CaseData) => c.case_code === caseCode);
+      setNexusMatches([]);
       setCaseData(found);
     }
   }, [caseCode]);
@@ -206,6 +270,7 @@ export default function CaseWorkspace() {
       const data = await res.json();
       if (res.ok) {
         setAnalysisResult(data);
+        void logActivity("Triggered live graph analysis & inference engine");
         await fetchCase();
       } else {
         alert(`Analysis Error: ${data.error || data.detail || "Failed"}`);
@@ -315,6 +380,7 @@ export default function CaseWorkspace() {
         setModalType(null);
         setSourceTitle("");
         setSourceContent("");
+        void logActivity(`Ingested new ${type.toLowerCase()} evidence: ${title}`);
         fetchCase();
       }
     } finally {
@@ -345,6 +411,7 @@ export default function CaseWorkspace() {
 
       if (res.ok) {
         alert("Interrogation intel submitted successfully!");
+        void logActivity("Submitted interrogation statement intel for AI linking");
         setNotesText("");
         if (caseData?.ai_case_id) syncAiData(caseData.ai_case_id);
       } else {
@@ -357,13 +424,49 @@ export default function CaseWorkspace() {
     }
   };
 
-  if (!caseData) return <div className="p-8 text-neutral-500 font-mono">Loading workspace...</div>;
-
-  const aiData = caseData.ai_extracted_data || {};
-  const personsList = aiData.persons || [];
+  const aiData = caseData?.ai_extracted_data || {};
+  const personsList = useMemo(() => aiData.persons || [], [aiData.persons]);
   const unknownsList = aiData.unknown_identities || [];
   const incidentsList = aiData.incidents || [];
   const relationsList = aiData.relationships || [];
+
+  useEffect(() => {
+    const currentCaseCode = caseData?.case_code;
+    if (!currentCaseCode || personsList.length === 0) return;
+
+    const suspectsPayload = personsList.map((item) => {
+      const person = item.person || item;
+      return {
+        name: person.identity?.name || person.name || person.canonical_name || "",
+        phones: person.contact?.phones || [person.phone].filter(Boolean),
+      };
+    });
+
+    async function checkNexus() {
+      try {
+        const res = await fetch("/api/ai/cross-match", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            current_case_code: currentCaseCode,
+            suspects: suspectsPayload,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && data.matches?.length > 0) {
+          setNexusMatches(data.matches);
+        } else {
+          setNexusMatches([]);
+        }
+      } catch (error) {
+        console.error("Nexus check error:", error);
+      }
+    }
+
+    void checkNexus();
+  }, [caseData?.case_code, personsList]);
+
+  if (!caseData) return <div className="p-8 text-neutral-500 font-mono">Loading workspace...</div>;
 
   const getEntityName = (id: string) => {
     const found = personsList.find(
@@ -373,11 +476,49 @@ export default function CaseWorkspace() {
   };
 
   const graphNodes = graphData?.nodes || [];
-  const graphEdges = graphData?.edges || graphData?.relationships || [];
+  const graphEdges = [
+    ...(graphData?.edges || graphData?.relationships || []),
+    ...relationsList.filter((relation) => relation.source_type === "MANUAL_FIELD_ENTRY"),
+  ];
+  const query = searchQuery.toLowerCase().trim();
+
+  const filteredPersons = personsList.filter((item: PersonRecord) => {
+    const person = item.person || item;
+    const name = (person.identity?.name || person.name || person.canonical_name || "").toLowerCase();
+    const role = ((item.roles && item.roles[0]) || person.role || "").toLowerCase();
+    const phone = (person.contact?.phones?.join(" ") || person.phone || "").toLowerCase();
+    const aliases = (person.identity?.aliases?.join(" ") || "").toLowerCase();
+    return name.includes(query) || role.includes(query) || phone.includes(query) || aliases.includes(query);
+  });
+
+  const filteredUnknowns = unknownsList.filter((unknown: UnknownIdentityRecord) => {
+    const label = (unknown.label || unknown.alias || "").toLowerCase();
+    const description = (unknown.description || "").toLowerCase();
+    return label.includes(query) || description.includes(query);
+  });
+
+  const filteredIncidents = incidentsList.filter((incident: IncidentRecord) => {
+    const text = (incident.title || incident.description || incident.summary || "").toLowerCase();
+    const points = (incident.key_points?.join(" ") || "").toLowerCase();
+    return text.includes(query) || points.includes(query);
+  });
+
+  const filteredRelations = relationsList.filter((relation: RelationRecord) => {
+    const fromName = getEntityName(relation.from?.id || relation.source || "").toLowerCase();
+    const toName = getEntityName(relation.to?.id || relation.target || "").toLowerCase();
+    const type = (relation.type || "").toLowerCase();
+    const evidence = (relation.evidence || "").toLowerCase();
+    return fromName.includes(query) || toName.includes(query) || type.includes(query) || evidence.includes(query);
+  });
+
+  const handleExportDossier = () => {
+    void logActivity("Exported legal case dossier PDF");
+    window.print();
+  };
 
   return (
     <>
-      <div className="min-h-screen bg-[#050505] text-neutral-200 font-mono p-8 max-w-[1180px] mx-auto print:hidden">
+      <div className="min-h-screen bg-[#050505] text-neutral-200 font-mono p-8 max-w-295 mx-auto print:hidden">
       <input type="file" ref={docInputRef} onChange={(e) => handleFileUpload(e, "DOCUMENT")} accept=".pdf" className="hidden" />
       <input type="file" ref={csvInputRef} onChange={(e) => handleFileUpload(e, "CSV")} accept=".csv,.xlsx" className="hidden" />
       <input type="file" ref={imgInputRef} onChange={(e) => handleFileUpload(e, "IMAGE")} accept="image/*" className="hidden" />
@@ -385,6 +526,33 @@ export default function CaseWorkspace() {
       <button onClick={() => router.push("/investigator/dashboard")} className="text-xs text-neutral-500 hover:text-white mb-4">
         ← DASHBOARD
       </button>
+
+      {nexusMatches.length > 0 && (
+        <div className="mb-6 border border-red-500/50 bg-red-950/25 p-4 rounded text-xs font-mono">
+          <div className="flex items-center gap-2 text-red-400 font-bold tracking-wider uppercase mb-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-ping" />
+            🚨 CROSS-CASE NEXUS ALERT: {nexusMatches.length} LINK(S) DETECTED
+          </div>
+          <p className="text-zinc-400 text-[11px] mb-3">
+            The intelligence engine detected suspects in this case connected to other active FIRs.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {nexusMatches.map((match, index) => (
+              <div key={index} className="p-2.5 bg-black/60 border border-red-900/40 rounded flex flex-col gap-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-white font-bold">{match.suspectName}</span>
+                  <span className="text-[9px] px-1.5 py-0.5 bg-red-500/20 text-red-300 uppercase rounded">
+                    MATCH VIA {match.matchType}
+                  </span>
+                </div>
+                <span className="text-[10px] text-zinc-500">
+                  Linked to: <strong className="text-red-400">{match.matchedCaseCode}</strong> ({match.matchedCaseTitle})
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex justify-between items-start mb-6 border-b border-white/10 pb-6">
         <div>
@@ -417,7 +585,7 @@ export default function CaseWorkspace() {
               🔄 SYNC INTEL
             </button>
             <button
-              onClick={() => window.print()}
+              onClick={handleExportDossier}
               className="text-xs bg-zinc-900 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded hover:border-white transition flex items-center gap-1.5"
             >
               📄 EXPORT DOSSIER
@@ -582,6 +750,32 @@ export default function CaseWorkspace() {
         </button>
       </div>
 
+      {/* Quick Search / Filter Bar */}
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search suspects, phones, aliases, or incident narratives..."
+            className="w-full bg-zinc-950 border border-zinc-800 rounded px-3.5 py-2 text-xs text-white placeholder-neutral-500 outline-none focus:border-orange-500 transition-colors"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-2 text-xs text-neutral-500 hover:text-white"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        {searchQuery && (
+          <span className="text-[11px] text-orange-400 whitespace-nowrap">
+            Filtering active
+          </span>
+        )}
+      </div>
+
       {/* Tabs Header */}
       <div className="border-b border-white/10 mb-6 flex gap-6 text-xs font-bold overflow-x-auto">
         {[
@@ -628,7 +822,7 @@ export default function CaseWorkspace() {
         <div className="space-y-3">
           {personsList.length > 0 ? (
             <div className="grid grid-cols-2 gap-3">
-              {personsList.map((item: PersonRecord, idx: number) => {
+              {filteredPersons.map((item: PersonRecord, idx: number) => {
                 const p = item.person || item;
                 const name = p.identity?.name || p.name || p.canonical_name || "Unnamed Person";
                 const role = (item.roles && item.roles[0]) || p.role || "PERSON OF INTEREST";
@@ -669,7 +863,7 @@ export default function CaseWorkspace() {
               No unknown aliases or shadowy identifiers flagged.
             </div>
           ) : (
-            unknownsList.map((u: UnknownIdentityRecord, idx: number) => (
+            filteredUnknowns.map((u: UnknownIdentityRecord, idx: number) => (
               <div key={idx} className="border border-red-500/30 bg-red-950/10 p-4 rounded flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between gap-2">
@@ -695,7 +889,7 @@ export default function CaseWorkspace() {
       {activeTab === "incidents" && (
         <div className="space-y-3">
           {incidentsList.length > 0 ? (
-            incidentsList.map((inc: IncidentRecord, idx: number) => (
+            filteredIncidents.map((inc: IncidentRecord, idx: number) => (
               <div key={idx} className="p-4 border border-zinc-800 bg-zinc-950 rounded">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-orange-400 uppercase tracking-wide">
@@ -734,12 +928,95 @@ export default function CaseWorkspace() {
       {/* Tab 5: Relations */}
       {activeTab === "relations" && (
         <div className="space-y-2">
+          <div className="flex justify-between items-center mb-4">
+            <span className="text-xs text-neutral-400">Targeted links & corroborations</span>
+            <button
+              onClick={() => setShowAddRelModal(!showAddRelModal)}
+              className="text-[11px] bg-orange-600/20 text-orange-400 border border-orange-500/40 px-3 py-1 rounded hover:bg-orange-600/30"
+            >
+              {showAddRelModal ? "CANCEL" : "+ LINK ENTITIES"}
+            </button>
+          </div>
+
+          {showAddRelModal && (
+            <form onSubmit={handleAddRelation} className="mb-6 bg-zinc-950 border border-zinc-800 p-4 rounded space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[10px] text-zinc-500 block mb-1">SOURCE ENTITY</label>
+                  <select
+                    value={relSource}
+                    onChange={(event) => setRelSource(event.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-white text-xs p-2 rounded outline-none"
+                    required
+                  >
+                    <option value="">Select Entity A</option>
+                    {personsList.map((person, index) => {
+                      const profile = person.person || person;
+                      const id = profile.person_id || profile.id || `p-${index}`;
+                      const name = profile.identity?.name || profile.name || id;
+                      return <option key={id} value={id}>{name}</option>;
+                    })}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-zinc-500 block mb-1">RELATION TYPE</label>
+                  <input
+                    type="text"
+                    value={relType}
+                    onChange={(event) => setRelType(event.target.value)}
+                    placeholder="e.g. CALLS, TRANSFERS_FUNDS, ASSOCIATE"
+                    className="w-full bg-zinc-900 border border-zinc-800 text-white text-xs p-2 rounded outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-zinc-500 block mb-1">TARGET ENTITY</label>
+                  <select
+                    value={relTarget}
+                    onChange={(event) => setRelTarget(event.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-white text-xs p-2 rounded outline-none"
+                    required
+                  >
+                    <option value="">Select Entity B</option>
+                    {personsList.map((person, index) => {
+                      const profile = person.person || person;
+                      const id = profile.person_id || profile.id || `p-${index}`;
+                      const name = profile.identity?.name || profile.name || id;
+                      return <option key={id} value={id}>{name}</option>;
+                    })}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-zinc-500 block mb-1">CORROBORATING EVIDENCE / WITNESS NOTE</label>
+                <input
+                  type="text"
+                  value={relEvidence}
+                  onChange={(event) => setRelEvidence(event.target.value)}
+                  placeholder="e.g. CDR analysis showed 14 calls between 01:00 AM and 03:00 AM on incident night."
+                  className="w-full bg-zinc-900 border border-zinc-800 text-white text-xs p-2 rounded outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={relSubmitting}
+                className="text-xs bg-orange-500 text-black font-bold px-4 py-1.5 rounded hover:bg-orange-400 disabled:opacity-50"
+              >
+                {relSubmitting ? "SAVING LINK..." : "CONFIRM & LINK IN GRAPH"}
+              </button>
+            </form>
+          )}
+
           {relationsList.length === 0 ? (
             <div className="text-xs text-neutral-500 p-8 text-center border border-white/5">
               Relationships will appear after Graph Entity linking finishes.
             </div>
           ) : (
-            relationsList.map((rel: RelationRecord, idx: number) => {
+            filteredRelations.map((rel: RelationRecord, idx: number) => {
               const fromName = getEntityName(rel.from?.id || rel.source || "Node A");
               const toName = getEntityName(rel.to?.id || rel.target || "Node B");
 
