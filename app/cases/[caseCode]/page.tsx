@@ -12,37 +12,54 @@ interface SourceData {
   uploaded_at?: string;
 }
 
-interface PersonRecord {
+interface PersonProfile {
+  identity?: { name?: string; aliases?: string[] };
+  person_id?: string;
   name?: string;
   canonical_name?: string;
   role?: string;
   phone?: string;
-  notes?: string;
+  contact?: { phones?: string[] };
+  addresses?: { text?: string }[];
+}
+
+interface PersonRecord extends PersonProfile {
+  person?: PersonProfile;
+  roles?: string[];
 }
 
 interface UnknownIdentityRecord {
+  label?: string;
   alias?: string;
   identifier?: string;
   description?: string;
+  status?: string;
+  roles?: string[];
 }
 
 interface IncidentRecord {
   title?: string;
   summary?: string;
   description?: string;
+  key_points?: string[];
+  time?: { start?: string };
+  extraction?: { method?: string };
 }
 
-interface RelationshipRecord {
+interface RelationRecord {
+  from?: { id?: string };
+  to?: { id?: string };
   source?: string;
   target?: string;
   type?: string;
+  evidence?: string;
 }
 
 interface AiExtractedData {
   persons?: PersonRecord[];
   unknown_identities?: UnknownIdentityRecord[];
   incidents?: IncidentRecord[];
-  relationships?: RelationshipRecord[];
+  relationships?: RelationRecord[];
 }
 
 interface CaseData {
@@ -91,14 +108,30 @@ export default function CaseWorkspace() {
   }, [caseCode]);
 
   useEffect(() => {
-    // Initial hydration/fetch pattern is intentional; the data is loaded from the API and
-    // then rendered without creating a stale loop.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchCase();
+    void (async () => {
+      await fetchCase();
+    })();
   }, [fetchCase]);
 
-  // Status Polling via Next.js Proxy (No CORS)
-useEffect(() => {
+  // Sync with AI Backend
+  const syncAiData = useCallback(async (aiCaseId: string) => {
+    try {
+      await fetch("/api/ai/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          case_code: caseCode,
+          ai_case_id: aiCaseId,
+        }),
+      });
+      await fetchCase();
+    } catch (err) {
+      console.error("Sync error:", err);
+    }
+  }, [caseCode, fetchCase]);
+
+  // Polling via Next.js Proxy
+  useEffect(() => {
     if (!jobId || jobStatus === "completed" || jobStatus === "failed") return;
 
     const interval = setInterval(async () => {
@@ -107,24 +140,20 @@ useEffect(() => {
         const data = await res.json();
 
         if (data && data.status) {
-          const st = String(data.status).toLowerCase();
-          setJobStatus(st as "idle" | "queued" | "processing" | "completed" | "failed");
+          const rawStatus = String(data.status).toUpperCase();
 
-          if (st === "completed") {
+          if (rawStatus === "COMPLETED" || data.steps?.persistence === "COMPLETED") {
+            setJobStatus("completed");
+            clearInterval(interval);
 
-            // Render backend se extracted data sync karke MongoDB me daalo
             if (caseData?.ai_case_id) {
-              await fetch("/api/ai/sync", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  case_code: caseCode,
-                  ai_case_id: caseData.ai_case_id,
-                }),
-              });
+              await syncAiData(caseData.ai_case_id);
             }
-
-            fetchCase();
+          } else if (rawStatus === "FAILED" && data.error) {
+            setJobStatus("failed");
+            clearInterval(interval);
+          } else {
+            setJobStatus("processing");
           }
         }
       } catch (e) {
@@ -133,14 +162,14 @@ useEffect(() => {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [jobId, jobStatus, caseData?.ai_case_id, caseCode, fetchCase]);
-async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: string) {
+  }, [jobId, jobStatus, caseData?.ai_case_id, syncAiData]);
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: string) {
     const file = e.target.files?.[0];
     if (!file || !caseData) return;
 
-    // Strict validation for FIR Documents
     if (type === "DOCUMENT" && !file.name.toLowerCase().endsWith(".pdf")) {
-      alert("Please upload a valid .pdf file. Text/Word files are not supported by the AI parser.");
+      alert("Please upload a valid .pdf file.");
       e.target.value = "";
       return;
     }
@@ -168,11 +197,9 @@ async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: st
             setJobId(result.job_id);
             setJobStatus("processing");
           } else {
-            console.error("Upload proxy response error:", result);
             setJobStatus("failed");
           }
-        } catch (uploadErr) {
-          console.error("Upload proxy failed:", uploadErr);
+        } catch {
           setJobStatus("failed");
         }
       }
@@ -232,12 +259,12 @@ async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: st
       if (res.ok) {
         alert("Interrogation intel submitted successfully!");
         setNotesText("");
+        if (caseData?.ai_case_id) syncAiData(caseData.ai_case_id);
       } else {
-        alert("Submission failed. Check backend status.");
+        alert("Submission failed.");
       }
-    } catch (err) {
-      alert("Network error occurred.");
-      console.error("Interrogation submit error:", err);
+    } catch {
+      alert("Network error.");
     } finally {
       setIsSubmittingNotes(false);
     }
@@ -246,10 +273,21 @@ async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: st
   if (!caseData) return <div className="p-8 text-neutral-500 font-mono">Loading workspace...</div>;
 
   const aiData = caseData.ai_extracted_data || {};
+  const personsList = aiData.persons || [];
+  const unknownsList = aiData.unknown_identities || [];
+  const incidentsList = aiData.incidents || [];
+  const relationsList = aiData.relationships || [];
+
+  const getEntityName = (id: string) => {
+    const found = personsList.find(
+      (item) => (item.person?.person_id || item.person_id) === id
+    );
+    return found?.person?.identity?.name || found?.name || id;
+  };
 
   return (
     <div className="min-h-screen bg-[#050505] text-neutral-200 font-mono p-8 max-w-[1180px] mx-auto">
-      <input type="file" ref={docInputRef} onChange={(e) => handleFileUpload(e, "DOCUMENT")} accept=".pdf,.docx,.txt" className="hidden" />
+      <input type="file" ref={docInputRef} onChange={(e) => handleFileUpload(e, "DOCUMENT")} accept=".pdf" className="hidden" />
       <input type="file" ref={csvInputRef} onChange={(e) => handleFileUpload(e, "CSV")} accept=".csv,.xlsx" className="hidden" />
       <input type="file" ref={imgInputRef} onChange={(e) => handleFileUpload(e, "IMAGE")} accept="image/*" className="hidden" />
 
@@ -273,6 +311,12 @@ async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: st
               className="text-xs bg-zinc-900 border border-orange-500/40 text-orange-400 px-3 py-1 rounded hover:bg-orange-500 hover:text-black transition"
             >
               OPEN AI COPILOT
+            </button>
+            <button
+              onClick={() => caseData?.ai_case_id && syncAiData(caseData.ai_case_id)}
+              className="text-xs bg-zinc-900 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded hover:border-white"
+            >
+              🔄 SYNC INTEL
             </button>
           </div>
           {caseData.ai_case_id && (
@@ -300,7 +344,7 @@ async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: st
                 {jobStatus === "queued" && "FIR queued for background S3/SQS ingestion..."}
                 {jobStatus === "processing" && "Performing OCR, Gemini Entity Extraction & Graph Linking..."}
                 {jobStatus === "completed" && "Entity extraction complete. Knowledge graph ready."}
-                {jobStatus === "failed" && "Processing failed. Check document format."}
+                {jobStatus === "failed" && "Processing status pending or failed."}
               </div>
             </div>
           </div>
@@ -316,7 +360,7 @@ async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: st
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div className="border border-white/10 bg-white/[0.01] p-6 text-center hover:border-orange-500/40">
             <div className="text-xs font-bold text-white">DOCUMENTS / FIR</div>
-            <div className="text-[10px] text-neutral-500 mt-1">PDF, DOCX, TXT</div>
+            <div className="text-[10px] text-neutral-500 mt-1">PDF ONLY</div>
             <button
               disabled={submitting}
               onClick={() => docInputRef.current?.click()}
@@ -380,14 +424,14 @@ async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: st
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs Header */}
       <div className="border-b border-white/10 mb-6 flex gap-6 text-xs font-bold">
         {[
           { key: "sources", label: `RAW EVIDENCE (${caseData.sources?.length || 0})` },
-          { key: "persons", label: `IDENTIFIED PERSONS (${aiData.persons?.length || 0})` },
-          { key: "unknowns", label: `UNKNOWN IDENTITIES (${aiData.unknown_identities?.length || 0})` },
-          { key: "incidents", label: `INCIDENTS (${aiData.incidents?.length || 0})` },
-          { key: "relations", label: `RELATIONSHIPS (${aiData.relationships?.length || 0})` },
+          { key: "persons", label: `IDENTIFIED PERSONS (${personsList.length})` },
+          { key: "unknowns", label: `UNKNOWN IDENTITIES (${unknownsList.length})` },
+          { key: "incidents", label: `INCIDENTS (${incidentsList.length})` },
+          { key: "relations", label: `RELATIONSHIPS (${relationsList.length})` },
         ].map((t) => (
           <button
             key={t.key}
@@ -420,19 +464,35 @@ async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: st
         </div>
       )}
 
-      {/* Tab 2: Persons */}
+      {/* Tab 2: Persons (Supports Flat & Nested Backend JSON) */}
       {activeTab === "persons" && (
         <div className="space-y-3">
-          {(aiData?.persons?.length ?? 0) > 0 ? (
+          {personsList.length > 0 ? (
             <div className="grid grid-cols-2 gap-3">
-              {(aiData?.persons ?? []).map((p: PersonRecord, idx: number) => (
-                <div key={idx} className="border border-white/10 bg-white/[0.02] p-4">
-                  <div className="text-xs font-bold text-white">{p.name || p.canonical_name || "Unnamed Person"}</div>
-                  <div className="text-[10px] text-orange-400 mt-1">ROLE: {p.role || "Role unassigned"}</div>
-                  {p.phone && <div className="text-[11px] text-neutral-400 mt-2">📞 {p.phone}</div>}
-                  {p.notes && <div className="text-[11px] text-neutral-500 mt-2 leading-relaxed">{p.notes}</div>}
-                </div>
-              ))}
+              {personsList.map((item: PersonRecord, idx: number) => {
+                const p = item.person || item;
+                const name = p.identity?.name || p.name || p.canonical_name || "Unnamed Person";
+                const role = (item.roles && item.roles[0]) || p.role || "PERSON OF INTEREST";
+                const phone = p.contact?.phones?.[0] || p.phone || null;
+                const address = p.addresses?.[0]?.text || null;
+                const aliases = p.identity?.aliases?.join(", ") || null;
+
+                return (
+                  <div key={idx} className="border border-white/10 bg-white/[0.02] p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs font-bold text-white">{name}</div>
+                        <span className="text-[9px] px-2 py-0.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold uppercase">
+                          {role}
+                        </span>
+                      </div>
+                      {aliases && <div className="text-[10px] text-orange-400/80 mt-1">aka {aliases}</div>}
+                      {phone && <div className="text-[11px] text-neutral-400 mt-2">📞 {phone}</div>}
+                      {address && <div className="text-[11px] text-neutral-500 mt-1">📍 {address}</div>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="p-6 border border-dashed border-zinc-800 rounded text-center text-zinc-500 text-sm">
@@ -445,15 +505,27 @@ async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: st
       {/* Tab 3: Unknowns */}
       {activeTab === "unknowns" && (
         <div className="grid grid-cols-2 gap-3">
-          {(!aiData.unknown_identities || aiData.unknown_identities.length === 0) ? (
+          {unknownsList.length === 0 ? (
             <div className="col-span-2 text-xs text-neutral-500 p-8 text-center border border-white/5">
               No unknown aliases or shadowy identifiers flagged.
             </div>
           ) : (
-            aiData.unknown_identities.map((u: UnknownIdentityRecord, idx: number) => (
-              <div key={idx} className="border border-red-500/20 bg-red-500/[0.02] p-4">
-                <div className="text-xs font-bold text-red-400">{u.alias || u.identifier || "Unknown Subject"}</div>
-                <div className="text-[11px] text-neutral-400 mt-1">{u.description || "Unidentified accomplice"}</div>
+            unknownsList.map((u: UnknownIdentityRecord, idx: number) => (
+              <div key={idx} className="border border-red-500/30 bg-red-950/10 p-4 rounded flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-red-400">🎭 {u.label || u.alias || "Unknown Node"}</span>
+                    <span className="text-[9px] px-2 py-0.5 bg-red-900/40 border border-red-700/50 text-red-300 font-bold uppercase">
+                      {u.status || "UNIDENTIFIED"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
+                    {u.description?.replace(/^Unidentified Node:\s*/i, "") || "Unidentified accomplice in network."}
+                  </p>
+                </div>
+                <div className="mt-3 text-[10px] text-neutral-500">
+                  ROLE: {u.roles?.[0] || "UNKNOWN"}
+                </div>
               </div>
             ))
           )}
@@ -463,13 +535,33 @@ async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: st
       {/* Tab 4: Incidents */}
       {activeTab === "incidents" && (
         <div className="space-y-3">
-          {(aiData?.incidents?.length ?? 0) > 0 ? (
-            (aiData?.incidents ?? []).map((inc: IncidentRecord, idx: number) => (
+          {incidentsList.length > 0 ? (
+            incidentsList.map((inc: IncidentRecord, idx: number) => (
               <div key={idx} className="p-4 border border-zinc-800 bg-zinc-950 rounded">
-                <p className="font-semibold text-zinc-200">{inc.title || "FIR Incident"}</p>
-                <p className="text-xs text-zinc-400 mt-1">
-                  {inc.description || inc.summary || "Detailed narrative pending AI extraction / resolution."}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-orange-400 uppercase tracking-wide">
+                    {inc.time?.start ? `DATE LOGGED: ${inc.time.start}` : "INCIDENT LOG"}
+                  </span>
+                  <span className="text-[9px] px-2 py-0.5 bg-zinc-900 border border-zinc-700 text-zinc-400">
+                    {inc.extraction?.method || "PARSED"}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-300 mt-2 leading-relaxed">
+                  {inc.description || inc.title || inc.summary || "Detailed narrative pending AI extraction."}
                 </p>
+                {inc.key_points && inc.key_points.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-zinc-900">
+                    <div className="text-[10px] text-zinc-500 font-bold uppercase mb-2">Key Extracted Points:</div>
+                    <ul className="space-y-1">
+                    {inc.key_points.map((pt: string, i: number) => (
+                      <li key={i} className="text-[11px] text-zinc-400 flex items-start gap-2">
+                        <span className="text-orange-500 mt-0.5">•</span>
+                        <span>{pt}</span>
+                      </li>
+                    ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             ))
           ) : (
@@ -483,25 +575,37 @@ async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: st
       {/* Tab 5: Relations */}
       {activeTab === "relations" && (
         <div className="space-y-2">
-          {(!aiData.relationships || aiData.relationships.length === 0) ? (
+          {relationsList.length === 0 ? (
             <div className="text-xs text-neutral-500 p-8 text-center border border-white/5">
               Relationships will appear after Graph Entity linking finishes.
             </div>
           ) : (
-            aiData.relationships.map((rel: RelationshipRecord, idx: number) => (
-              <div key={idx} className="border border-white/10 bg-black p-3 flex items-center justify-between text-xs">
-                <span className="font-bold text-white">{rel.source || "Entity A"}</span>
-                <span className="px-2 py-0.5 bg-orange-500/10 text-orange-400 text-[10px] font-bold uppercase tracking-wider">
-                  ── {rel.type || "LINKED_TO"} ──▶
-                </span>
-                <span className="font-bold text-white">{rel.target || "Entity B"}</span>
+            relationsList.map((rel: RelationRecord, idx: number) => {
+              const fromName = getEntityName(rel.from?.id || rel.source || "Node A");
+              const toName = getEntityName(rel.to?.id || rel.target || "Node B");
+
+              return (
+              <div key={idx} className="border border-zinc-800 bg-zinc-950 p-4 rounded">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white">{fromName}</span>
+                  <span className="px-2.5 py-0.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 text-[10px] font-bold uppercase">
+                    ── {rel.type || "LINKED_TO"} ──▶
+                  </span>
+                  <span className="text-xs font-bold text-white">{toName}</span>
+                </div>
+                {rel.evidence && (
+                  <p className="text-[11px] text-zinc-400 italic leading-relaxed mt-1">
+                    &quot;{rel.evidence}&quot;
+                  </p>
+                )}
               </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
 
-      {/* Modal & Preview */}
+      {/* Modals & Previews */}
       {modalType && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <form onSubmit={handleModalSubmit} className="border border-white/20 bg-[#0a0a0a] p-6 max-w-md w-full">
