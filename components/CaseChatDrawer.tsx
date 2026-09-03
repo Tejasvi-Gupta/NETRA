@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface Props {
   aiCaseId: string;
@@ -12,6 +12,38 @@ export default function CaseChatDrawer({ aiCaseId, isOpen, onClose }: Props) {
   const [messages, setMessages] = useState<{ role: "user" | "ai"; content: string }[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [fetchingHistory, setFetchingHistory] = useState(false);
+
+  // Load chat history whenever drawer opens
+  useEffect(() => {
+    if (!isOpen || !aiCaseId) return;
+
+    async function loadHistory() {
+      setFetchingHistory(true);
+      try {
+        const res = await fetch(`/api/ai/chat/history?case_id=${aiCaseId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const historyArray = Array.isArray(data) ? data : data.messages || data.history || [];
+
+        if (Array.isArray(historyArray) && historyArray.length > 0) {
+          setMessages(
+            historyArray.map((item: Record<string, unknown>) => ({
+              role: item.role === "assistant" || item.role === "ai" ? "ai" : "user",
+              content: (item.content || item.message || item.text || "") as string,
+            }))
+          );
+        }
+      } catch (err) {
+        console.error("Failed to load chat history:", err);
+      } finally {
+        setFetchingHistory(false);
+      }
+    }
+
+    loadHistory();
+  }, [isOpen, aiCaseId]);
 
   if (!isOpen) return null;
 
@@ -32,7 +64,12 @@ export default function CaseChatDrawer({ aiCaseId, isOpen, onClose }: Props) {
       });
 
       const data = await res.json();
-      const aiReply = data.response || data.reply || data.answer || "No response received from agent.";
+      const aiReply =
+        data.response ||
+        data.reply ||
+        data.answer ||
+        data.message ||
+        "No response received from agent.";
       setMessages((prev) => [...prev, { role: "ai", content: aiReply }]);
     } catch {
       setMessages((prev) => [...prev, { role: "ai", content: "Failed to connect to AI engine." }]);
@@ -51,7 +88,9 @@ export default function CaseChatDrawer({ aiCaseId, isOpen, onClose }: Props) {
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto space-y-3 text-xs">
-        {messages.length === 0 ? (
+        {fetchingHistory ? (
+          <p className="text-zinc-500 text-center mt-8 italic">Loading case memory...</p>
+        ) : messages.length === 0 ? (
           <p className="text-zinc-500 text-center mt-8">
             Ask questions about suspects, timeline, transactions, or cross-evidence links.
           </p>
@@ -62,10 +101,12 @@ export default function CaseChatDrawer({ aiCaseId, isOpen, onClose }: Props) {
               className={`p-3 rounded ${
                 m.role === "user"
                   ? "bg-orange-500/10 border border-orange-500/20 text-orange-200 ml-6"
-                  : "bg-zinc-900 border border-zinc-800 text-zinc-300 mr-6"
+                  : "bg-zinc-900 border border-zinc-800 text-zinc-300 mr-6 whitespace-pre-wrap"
               }`}
             >
-              <span className="text-[10px] block opacity-50 mb-1">{m.role === "user" ? "INVESTIGATOR" : "AI"}</span>
+              <span className="text-[10px] block opacity-50 mb-1">
+                {m.role === "user" ? "INVESTIGATOR" : "AI"}
+              </span>
               {m.content}
             </div>
           ))
@@ -84,7 +125,7 @@ export default function CaseChatDrawer({ aiCaseId, isOpen, onClose }: Props) {
         <button
           type="submit"
           disabled={loading}
-          className="bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 text-xs font-bold rounded"
+          className="bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 text-xs font-bold rounded disabled:opacity-50"
         >
           SEND
         </button>

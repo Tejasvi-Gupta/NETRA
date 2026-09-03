@@ -2,22 +2,24 @@ import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
   try {
-    const formData = await request.formData();
-    const file = formData.get("file") as File;
-    const aiCaseId = formData.get("ai_case_id") as string;
+    const { ai_case_id, notes } = await request.json();
 
-    if (!file || !aiCaseId) {
-      return NextResponse.json({ error: "Missing file or ai_case_id" }, { status: 400 });
+    if (!ai_case_id || !notes) {
+      return NextResponse.json({ error: "Missing case ID or notes" }, { status: 400 });
     }
 
-    // Node.js server to Render server (CORS check browser me hota hai, yahan bilkul nahi hoga)
+    // Interrogation text ko file Blob bana kar documents endpoint par bhejna hai
     const backendForm = new FormData();
-    backendForm.append("file", file);
+    const textBlob = new Blob([notes], { type: "text/plain" });
+    backendForm.append("file", textBlob, `interrogation_${Date.now()}.txt`);
 
-    const res = await fetch(`https://fir-intelligence-api.onrender.com/api/v1/cases/${aiCaseId}/documents`, {
-      method: "POST",
-      body: backendForm,
-    });
+    const res = await fetch(
+      `https://fir-intelligence-api.onrender.com/api/v1/cases/${ai_case_id}/documents`,
+      {
+        method: "POST",
+        body: backendForm,
+      }
+    );
 
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
