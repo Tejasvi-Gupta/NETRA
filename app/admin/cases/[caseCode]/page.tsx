@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import CaseTimelineView from "@/components/CaseTimelineView";
+import ForensicDossierPrint from "@/components/ForensicDossierPrint";
 
 interface SourceData {
   type: string;
@@ -116,6 +118,8 @@ export default function AdminCaseView() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [isTimelineOpen, setIsTimelineOpen] = useState(false);
 
   const fetchCase = useCallback(async () => {
     const res = await fetch("/api/cases");
@@ -132,9 +136,9 @@ export default function AdminCaseView() {
     })();
   }, [fetchCase]);
 
-  // Load Graph Data when graph tab is clicked
+  // Load graph data for the workspace and printable dossier
   useEffect(() => {
-    if (activeTab !== "graph" || !caseData?.ai_case_id) return;
+    if (!caseData?.ai_case_id) return;
 
     async function fetchGraph() {
       setLoadingGraph(true);
@@ -199,7 +203,8 @@ export default function AdminCaseView() {
   const graphEdges = graphData?.edges || graphData?.relationships || [];
 
   return (
-    <div className="min-h-screen bg-[#050505] text-neutral-200 font-mono p-8 max-w-[1180px] mx-auto">
+    <>
+    <div className="min-h-screen bg-[#050505] text-neutral-200 font-mono p-8 max-w-[1180px] mx-auto print:hidden">
       <div className="flex justify-between items-center mb-4">
         <button onClick={() => router.push("/admin/dashboard")} className="text-xs text-neutral-500 hover:text-white">
           ← DASHBOARD
@@ -212,6 +217,12 @@ export default function AdminCaseView() {
           className="bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-700/50 text-xs px-3.5 py-1.5 rounded font-bold disabled:opacity-50 transition-colors"
         >
           {analyzing ? "ANALYZING EVIDENCE..." : "⚡ RUN ANALYSIS"}
+        </button>
+        <button
+          onClick={() => window.print()}
+          className="bg-zinc-900 hover:bg-zinc-800 text-neutral-300 border border-zinc-700 text-xs px-3.5 py-1.5 rounded font-bold transition-colors"
+        >
+          📄 EXPORT DOSSIER
         </button>
       </div>
 
@@ -278,6 +289,15 @@ export default function AdminCaseView() {
           </div>
         </div>
       )}
+
+      <div className="mb-3 flex justify-end">
+        <button
+          onClick={() => setIsTimelineOpen(true)}
+          className="border border-red-500/40 bg-red-500/10 px-3 py-2 text-[10px] font-bold tracking-widest text-red-400 transition-colors hover:bg-red-500 hover:text-black"
+        >
+          VIEW TIMELINE ({incidentsList.length})
+        </button>
+      </div>
 
       {/* Tabs Header */}
       <div className="border-b border-white/10 mb-6 flex gap-6 text-xs font-bold overflow-x-auto">
@@ -469,68 +489,265 @@ export default function AdminCaseView() {
         </div>
       )}
 
-      {/* Tab 6: Network Graph */}
+      {/* Tab 6: Network Graph (Interactive Visual Canvas) */}
       {activeTab === "graph" && (
-        <div className="border border-zinc-800 bg-zinc-950 p-6 rounded">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-              Network Graph Entities & Links
-            </h3>
-            <span className="text-[10px] text-neutral-500">
-              Nodes: {graphNodes.length} | Edges: {graphEdges.length}
+        <div className="border border-zinc-800 bg-zinc-950 p-6 rounded space-y-6">
+          <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
+            <div>
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                Interactive Link Analysis Network
+              </h3>
+              <p className="text-[11px] text-zinc-500 mt-0.5">
+                Visual entity map generated via AI case reasoning
+              </p>
+            </div>
+            <span className="text-[10px] bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded text-neutral-400">
+              {graphNodes.length} Entities • {graphEdges.length} Links
             </span>
           </div>
 
           {loadingGraph ? (
-            <div className="p-8 text-center text-xs text-neutral-500">Fetching graph topology...</div>
-          ) : graphNodes.length === 0 && graphEdges.length === 0 ? (
-            <div className="p-8 text-center text-xs text-neutral-500 border border-dashed border-zinc-800">
-              No graph relationships processed yet. Click &quot;⚡ RUN ANALYSIS&quot; to compute graph vectors.
+            <div className="p-12 text-center text-xs text-neutral-500">
+              Generating graph layout...
+            </div>
+          ) : graphNodes.length === 0 ? (
+            <div className="p-12 text-center text-xs text-neutral-500 border border-dashed border-zinc-850 rounded">
+              No graph entities found. Run Analysis first.
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="border border-zinc-900 bg-zinc-900/40 p-3 rounded">
-                <div className="text-[10px] text-neutral-400 font-bold uppercase mb-2">Network Nodes</div>
-                <div className="flex flex-wrap gap-2">
-                  {graphNodes.map((n, i) => (
-                    <span key={i} className="text-xs bg-zinc-800 border border-zinc-700 px-2.5 py-1 rounded text-zinc-200">
-                      {n.label || n.id} <span className="text-[9px] text-red-400">({n.type || "entity"})</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
+            <div className="space-y-6">
+              <div className="border border-zinc-850 bg-black/60 rounded-lg p-4 overflow-x-auto">
+                <svg
+                  viewBox="0 0 820 440"
+                  className="w-full min-w-[760px] h-[400px] select-none"
+                >
+                  <defs>
+                    <marker
+                      id="arrow"
+                      viewBox="0 0 10 10"
+                      refX="24"
+                      refY="5"
+                      markerWidth="6"
+                      markerHeight="6"
+                      orient="auto-start-reverse"
+                    >
+                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
+                    </marker>
+                  </defs>
 
-              <div className="border border-zinc-900 bg-zinc-900/40 p-3 rounded">
-                <div className="text-[10px] text-neutral-400 font-bold uppercase mb-2">Targeted Links</div>
-                <div className="space-y-2">
-                  {graphEdges.map((e, i) => {
-                    const fromId = (typeof e.from === "object" ? e.from?.id : e.from) || e.source || "";
-                    const toId = (typeof e.to === "object" ? e.to?.id : e.to) || e.target || "";
+                  {(() => {
+                    const width = 820;
+                    const height = 440;
+                    const centerX = width / 2;
+                    const centerY = height / 2;
+                    const radius = 160;
 
-                    const fromLabel = graphNodes.find((n) => n.id === fromId)?.label || fromId || "Node A";
-                    const toLabel = graphNodes.find((n) => n.id === toId)?.label || toId || "Node B";
+                    const coords: Record<string, { x: number; y: number }> = {};
+                    graphNodes.forEach((node, idx) => {
+                      const angle = (2 * Math.PI * idx) / graphNodes.length;
+                      coords[node.id] = {
+                        x: centerX + radius * Math.cos(angle),
+                        y: centerY + radius * Math.sin(angle),
+                      };
+                    });
 
                     return (
-                      <div key={i} className="text-xs font-mono bg-zinc-950 border border-zinc-800 p-2.5 rounded flex flex-col gap-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-white font-bold">{fromLabel}</span>
-                          <span className="text-red-400 font-bold px-2 text-[10px] tracking-wider bg-red-500/10 border border-red-500/30 rounded py-0.5">
-                            ──[{e.type || "LINKED_TO"}]──▶
-                          </span>
-                          <span className="text-white font-bold">{toLabel}</span>
+                      <>
+                        {graphEdges.map((e, i) => {
+                          const fId = (typeof e.from === "object" ? e.from?.id : e.from) || e.source || "";
+                          const tId = (typeof e.to === "object" ? e.to?.id : e.to) || e.target || "";
+                          const start = coords[fId];
+                          const end = coords[tId];
+
+                          if (!start || !end) return null;
+
+                          return (
+                            <g key={`edge-${i}`}>
+                              <line
+                                x1={start.x}
+                                y1={start.y}
+                                x2={end.x}
+                                y2={end.y}
+                                stroke="#dc2626"
+                                strokeWidth="1.5"
+                                strokeDasharray="3 3"
+                                markerEnd="url(#arrow)"
+                                opacity="0.6"
+                              />
+                            </g>
+                          );
+                        })}
+
+                        {graphNodes.map((n, i) => {
+                          const pt = coords[n.id];
+                          if (!pt) return null;
+                          const isPerson = n.type === "PERSON";
+                          const isUnknown = n.type === "UNKNOWN";
+
+                          return (
+                            <g
+                              key={`node-${i}`}
+                              onClick={() => setSelectedNode(n)}
+                              className="cursor-pointer group transition-transform hover:scale-110"
+                            >
+                              <circle
+                                cx={pt.x}
+                                cy={pt.y}
+                                r="20"
+                                fill={isPerson ? "#7f1d1d" : isUnknown ? "#581c87" : "#27272a"}
+                                stroke={isPerson ? "#ef4444" : isUnknown ? "#c084fc" : "#71717a"}
+                                strokeWidth="2"
+                                className="group-hover:stroke-white transition-colors"
+                              />
+                              <text
+                                x={pt.x}
+                                y={pt.y + 4}
+                                textAnchor="middle"
+                                fill="#ffffff"
+                                fontSize="10"
+                                fontWeight="bold"
+                              >
+                                {isPerson ? "👤" : isUnknown ? "🎭" : "📌"}
+                              </text>
+                              <text
+                                x={pt.x}
+                                y={pt.y + 32}
+                                textAnchor="middle"
+                                fill="#e4e4e7"
+                                fontSize="10"
+                                fontFamily="monospace"
+                              >
+                                {n.label?.slice(0, 16) || n.id.slice(0, 8)}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
+                </svg>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-[10px] text-neutral-400 font-bold uppercase mb-2">
+                  Targeted Links & Evidence
+                </div>
+                {graphEdges.map((e, i) => {
+                  const fId = (typeof e.from === "object" ? e.from?.id : e.from) || e.source || "";
+                  const tId = (typeof e.to === "object" ? e.to?.id : e.to) || e.target || "";
+                  const fLabel = graphNodes.find((n) => n.id === fId)?.label || fId;
+                  const tLabel = graphNodes.find((n) => n.id === tId)?.label || tId;
+
+                  return (
+                    <div
+                      key={i}
+                      className="text-xs font-mono bg-zinc-950 border border-zinc-800 p-2.5 rounded flex flex-col gap-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-white font-bold">{fLabel}</span>
+                        <span className="text-red-400 font-bold px-2 text-[10px] bg-red-500/10 border border-red-500/30 rounded py-0.5">
+                          ──[{e.type || "LINKED_TO"}]──▶
+                        </span>
+                        <span className="text-white font-bold">{tLabel}</span>
+                      </div>
+                      {e.evidence && (
+                        <p className="text-[10px] text-neutral-500 italic pt-1 border-t border-zinc-900">
+                          &quot;{e.evidence}&quot;
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Node Inspector Slide-over Panel */}
+      {selectedNode && (
+        <div className="fixed inset-y-0 right-0 w-96 bg-[#0a0a0c] border-l border-zinc-800 p-6 z-50 shadow-2xl flex flex-col justify-between font-mono">
+          <div>
+            <div className="flex items-center justify-between border-b border-zinc-850 pb-4 mb-5">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/30 uppercase">
+                {selectedNode.type || "ENTITY"}
+              </span>
+              <button
+                onClick={() => setSelectedNode(null)}
+                className="text-neutral-500 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <h2 className="text-lg font-bold text-white mb-2">{selectedNode.label || selectedNode.id}</h2>
+            <p className="text-xs text-neutral-400 mb-6 break-all">ID: {selectedNode.id}</p>
+
+            <div className="space-y-3">
+              <div className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
+                Connected Edges & Intelligence
+              </div>
+              <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
+                {graphEdges
+                  .filter((edge) => {
+                    const fromId = typeof edge.from === "object" ? edge.from?.id : edge.from;
+                    const toId = typeof edge.to === "object" ? edge.to?.id : edge.to;
+                    return (fromId || edge.source) === selectedNode.id || (toId || edge.target) === selectedNode.id;
+                  })
+                  .map((edge, idx) => {
+                    const fromId = (typeof edge.from === "object" ? edge.from?.id : edge.from) || edge.source || "";
+                    const toId = (typeof edge.to === "object" ? edge.to?.id : edge.to) || edge.target || "";
+                    const isSource = fromId === selectedNode.id;
+                    const targetNode = graphNodes.find((node) => node.id === (isSource ? toId : fromId));
+
+                    return (
+                      <div key={idx} className="p-3 bg-zinc-950 border border-zinc-850 rounded text-xs">
+                        <div className="text-[10px] text-red-400 font-bold mb-1">
+                          {isSource ? "OUTGOING ──▶" : "◀── INCOMING"} [{edge.type || "LINKED"}]
                         </div>
-                        {e.evidence && (
-                          <p className="text-[10px] text-neutral-500 italic mt-0.5 border-t border-zinc-900 pt-1">
-                            &quot;{e.evidence}&quot;
-                          </p>
+                        <div className="text-zinc-200 font-bold">
+                          {targetNode?.label || (isSource ? toId : fromId)}
+                        </div>
+                        {edge.evidence && (
+                          <div className="text-[10px] text-neutral-500 italic mt-1.5 border-t border-zinc-900 pt-1">
+                            &quot;{edge.evidence}&quot;
+                          </div>
                         )}
                       </div>
                     );
                   })}
-                </div>
               </div>
             </div>
-          )}
+          </div>
+
+          <button
+            onClick={() => setSelectedNode(null)}
+            className="w-full mt-4 py-2 border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-neutral-300 text-xs font-bold rounded transition-colors"
+          >
+            CLOSE INSPECTOR
+          </button>
+        </div>
+      )}
+
+      {isTimelineOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          onClick={() => setIsTimelineOpen(false)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-4xl overflow-y-auto"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-2 flex justify-end">
+              <button
+                onClick={() => setIsTimelineOpen(false)}
+                className="border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-neutral-400 hover:border-red-500 hover:text-white"
+              >
+                ✕ CLOSE
+              </button>
+            </div>
+            <CaseTimelineView incidents={incidentsList} themeColor="red" />
+          </div>
         </div>
       )}
 
@@ -587,5 +804,17 @@ export default function AdminCaseView() {
         </div>
       )}
     </div>
+
+    {/* Printable Forensic Dossier */}
+    <ForensicDossierPrint
+      caseData={caseData}
+      persons={personsList}
+      unknowns={unknownsList}
+      incidents={incidentsList}
+      relations={relationsList}
+      graphNodes={graphNodes}
+      graphEdges={graphEdges}
+    />
+    </>
   );
 }

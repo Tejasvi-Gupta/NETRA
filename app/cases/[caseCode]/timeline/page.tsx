@@ -2,68 +2,141 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import type { Case, TimelineEvent } from "@/types/netra";
+
+interface IncidentRecord {
+  title?: string;
+  description?: string;
+  summary?: string;
+  key_points?: string[];
+  time?: { start?: string };
+  extraction?: { method?: string };
+}
+
+interface CaseRecord {
+  _id?: string;
+  case_code: string;
+  title: string;
+  status: string;
+  ai_extracted_data?: {
+    incidents?: IncidentRecord[];
+  };
+}
 
 export default function CaseTimelinePage() {
   const router = useRouter();
   const { caseCode } = useParams<{ caseCode: string }>();
 
-  const [caseRecord, setCaseRecord] = useState<Case | null>(null);
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [caseRecord, setCaseRecord] = useState<CaseRecord | null>(null);
+  const [events, setEvents] = useState<IncidentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
-      const response = await fetch(`/api/cases/${caseCode}`);
-      const payload = await response.json();
-      if (!response.ok || !payload.success || !payload.case) {
-        setError(payload.error ?? "Case not found.");
+      try {
+        const response = await fetch(`/api/cases/${caseCode}`);
+        const payload = await response.json();
+
+        if (!response.ok || !payload.success || !payload.case) {
+          setError(payload.error ?? "Case not found.");
+          setLoading(false);
+          return;
+        }
+
+        const caseData = payload.case as CaseRecord;
+        setCaseRecord(caseData);
+
+        // AI extracted incidents se timeline populate karega
+        const incidents = caseData.ai_extracted_data?.incidents || [];
+        setEvents(incidents);
+      } catch {
+        setError("Failed to fetch timeline intel.");
+      } finally {
         setLoading(false);
-        return;
       }
-      setCaseRecord(payload.case as Case);
-      setEvents([]);
-      setLoading(false);
     }
+
     if (caseCode) void load();
   }, [caseCode]);
 
-  if (loading) return <main className="min-h-screen bg-[#080808] px-6 py-24 text-center font-mono text-xs tracking-widest text-neutral-500">LOADING TIMELINE…</main>;
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#080808] px-6 py-24 text-center font-mono text-xs tracking-widest text-neutral-500">
+        LOADING TIMELINE INTEL…
+      </main>
+    );
+  }
+
   if (error || !caseRecord) {
     return (
-      <main className="min-h-screen bg-[#080808] px-6 py-24 text-center text-neutral-300">
+      <main className="min-h-screen bg-[#080808] px-6 py-24 text-center text-neutral-300 font-mono">
         <p className="text-sm text-red-400">{error ?? "Case not found."}</p>
-        <button onClick={() => router.push("/cases")} className="mt-6 border border-neutral-700 px-4 py-2 text-xs tracking-widest hover:border-red-500">BACK TO CASES</button>
+        <button
+          onClick={() => router.push("/cases")}
+          className="mt-6 border border-neutral-700 px-4 py-2 text-xs tracking-widest hover:border-red-500 text-neutral-300"
+        >
+          BACK TO CASES
+        </button>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#080808] text-neutral-200">
+    <main className="min-h-screen bg-[#080808] text-neutral-200 font-mono">
       <div className="mx-auto max-w-[900px] px-6 py-10 md:px-10">
-        <button onClick={() => router.push(`/cases/${caseCode}`)} className="text-[11px] tracking-[0.16em] text-neutral-400 hover:text-red-400">
-          ← BACK TO CASE
+        <button
+          onClick={() => router.push(`/cases/${caseCode}`)}
+          className="text-[11px] tracking-[0.16em] text-neutral-400 hover:text-red-400"
+        >
+          ← BACK TO WORKSPACE
         </button>
 
-        <h1 className="mt-5 text-3xl font-bold tracking-tight text-white">EVENT TIMELINE</h1>
-        <p className="mt-2 text-xs text-neutral-500">{caseRecord.title}</p>
+        <div className="mt-5 border-b border-white/10 pb-5">
+          <span className="text-xs text-red-500 font-bold uppercase">{caseRecord.case_code}</span>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-white uppercase">EVENT TIMELINE</h1>
+          <p className="mt-1 text-xs text-neutral-400">{caseRecord.title}</p>
+        </div>
 
         {events.length === 0 ? (
-          <div className="mt-10 border border-neutral-800 bg-[#0d0d0d] py-16 text-center text-sm text-neutral-500">
-            No timeline events recorded yet.
+          <div className="mt-10 border border-neutral-800 bg-[#0d0d0d] py-16 text-center text-xs text-neutral-500">
+            No incident events detected by the AI pipeline yet. Run analysis first.
           </div>
         ) : (
-          <div className="mt-10 relative pl-6 border-l border-neutral-800">
-            {events.map((e) => (
-              <div key={e.id} className="relative mb-8 last:mb-0">
-                <span className="absolute -left-[29px] top-1 h-3 w-3 rounded-full border-2 border-red-500 bg-[#080808]" />
-                <div className="text-[10px] tracking-widest text-red-400">
-                  {new Date(e.event_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
-                  {e.event_time && <span className="text-neutral-500"> · {e.event_time}</span>}
+          <div className="mt-10 relative pl-6 border-l border-red-900/40">
+            {events.map((e, idx) => (
+              <div key={idx} className="relative mb-10 last:mb-0 group">
+                <span className="absolute -left-[31px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-red-500 bg-[#080808] group-hover:bg-red-500 transition-colors" />
+
+                <div className="text-[10px] tracking-widest text-red-400 font-bold uppercase">
+                  {e.time?.start ? `DATE LOGGED: ${e.time.start}` : `EVENT #${idx + 1}`}
+                  {e.extraction?.method && (
+                    <span className="text-neutral-500 ml-2">· PARSED VIA {e.extraction.method}</span>
+                  )}
                 </div>
-                <div className="mt-1.5 text-sm font-semibold text-white">{e.title}</div>
-                {e.details && <p className="mt-1.5 text-xs leading-relaxed text-neutral-400">{e.details}</p>}
+
+                <div className="mt-2 text-sm font-semibold text-white">
+                  {e.title || "Incident Report Statement"}
+                </div>
+
+                <p className="mt-2 text-xs leading-relaxed text-neutral-300">
+                  {e.description || e.summary || "No narrative details recorded."}
+                </p>
+
+                {e.key_points && e.key_points.length > 0 && (
+                  <div className="mt-3.5 pt-3 border-t border-neutral-850">
+                    <span className="text-[10px] text-neutral-500 uppercase tracking-wider block mb-1">
+                      Key Highlights:
+                    </span>
+                    <ul className="space-y-1">
+                      {e.key_points.map((pt, ptIdx) => (
+                        <li key={ptIdx} className="text-[11px] text-neutral-400 flex items-start gap-2">
+                          <span className="text-red-500 mt-0.5">•</span>
+                          <span>{pt}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             ))}
           </div>

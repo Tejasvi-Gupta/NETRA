@@ -4,6 +4,8 @@ import Image from "next/image";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import CaseChatDrawer from "@/components/CaseChatDrawer";
+import CaseTimelineView from "@/components/CaseTimelineView";
+import ForensicDossierPrint from "@/components/ForensicDossierPrint";
 
 interface SourceData {
   type: string;
@@ -73,7 +75,36 @@ interface CaseData {
   ai_extracted_data?: AiExtractedData;
 }
 
-type ActiveTab = "sources" | "persons" | "unknowns" | "incidents" | "relations";
+interface GraphNode {
+  id: string;
+  label?: string;
+  type?: string;
+}
+
+interface GraphEdge {
+  id?: string;
+  from?: { id?: string; type?: string };
+  to?: { id?: string; type?: string };
+  source?: string;
+  target?: string;
+  type?: string;
+  evidence?: string;
+  label?: string;
+}
+
+interface GraphData {
+  nodes?: GraphNode[];
+  edges?: GraphEdge[];
+  relationships?: GraphEdge[];
+}
+
+interface AnalysisResult {
+  summary?: string;
+  key_findings?: string[];
+  [key: string]: unknown;
+}
+
+type ActiveTab = "sources" | "persons" | "unknowns" | "incidents" | "relations" | "graph";
 
 export default function CaseWorkspace() {
   const { caseCode } = useParams();
@@ -93,6 +124,13 @@ export default function CaseWorkspace() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<"idle" | "queued" | "processing" | "completed" | "failed">("idle");
   const [activeTab, setActiveTab] = useState<ActiveTab>("sources");
+
+  // Analysis & Graph States
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const [loadingGraph, setLoadingGraph] = useState(false);
+  const [isTimelineOpen, setIsTimelineOpen] = useState(false);
 
   const docInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -129,6 +167,55 @@ export default function CaseWorkspace() {
       console.error("Sync error:", err);
     }
   }, [caseCode, fetchCase]);
+
+  // Load graph data for the workspace and printable dossier
+  useEffect(() => {
+    if (!caseData?.ai_case_id) return;
+
+    async function fetchGraph() {
+      setLoadingGraph(true);
+      try {
+        const res = await fetch(`/api/ai/graph?case_id=${caseData?.ai_case_id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setGraphData(data);
+        }
+      } catch (err) {
+        console.error("Failed to load graph data:", err);
+      } finally {
+        setLoadingGraph(false);
+      }
+    }
+
+    fetchGraph();
+  }, [activeTab, caseData?.ai_case_id]);
+
+  // Handle Run Analysis Action
+  const handleRunAnalysis = async () => {
+    if (!caseData?.ai_case_id) {
+      alert("No AI Case ID linked to this case.");
+      return;
+    }
+    setAnalyzing(true);
+    try {
+      const res = await fetch("/api/ai/analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ case_id: caseData.ai_case_id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAnalysisResult(data);
+        await fetchCase();
+      } else {
+        alert(`Analysis Error: ${data.error || data.detail || "Failed"}`);
+      }
+    } catch {
+      alert("Failed to trigger analysis.");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   // Polling via Next.js Proxy
   useEffect(() => {
@@ -285,8 +372,12 @@ export default function CaseWorkspace() {
     return found?.person?.identity?.name || found?.name || id;
   };
 
+  const graphNodes = graphData?.nodes || [];
+  const graphEdges = graphData?.edges || graphData?.relationships || [];
+
   return (
-    <div className="min-h-screen bg-[#050505] text-neutral-200 font-mono p-8 max-w-[1180px] mx-auto">
+    <>
+      <div className="min-h-screen bg-[#050505] text-neutral-200 font-mono p-8 max-w-[1180px] mx-auto print:hidden">
       <input type="file" ref={docInputRef} onChange={(e) => handleFileUpload(e, "DOCUMENT")} accept=".pdf" className="hidden" />
       <input type="file" ref={csvInputRef} onChange={(e) => handleFileUpload(e, "CSV")} accept=".csv,.xlsx" className="hidden" />
       <input type="file" ref={imgInputRef} onChange={(e) => handleFileUpload(e, "IMAGE")} accept="image/*" className="hidden" />
@@ -313,10 +404,23 @@ export default function CaseWorkspace() {
               OPEN AI COPILOT
             </button>
             <button
+              onClick={handleRunAnalysis}
+              disabled={analyzing || !caseData.ai_case_id}
+              className="text-xs bg-orange-950/40 border border-orange-600/50 text-orange-400 px-3 py-1 rounded font-bold hover:bg-orange-600 hover:text-black transition disabled:opacity-50"
+            >
+              {analyzing ? "ANALYZING..." : "⚡ RUN ANALYSIS"}
+            </button>
+            <button
               onClick={() => caseData?.ai_case_id && syncAiData(caseData.ai_case_id)}
               className="text-xs bg-zinc-900 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded hover:border-white"
             >
               🔄 SYNC INTEL
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="text-xs bg-zinc-900 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded hover:border-white transition flex items-center gap-1.5"
+            >
+              📄 EXPORT DOSSIER
             </button>
           </div>
           {caseData.ai_case_id && (
@@ -331,9 +435,54 @@ export default function CaseWorkspace() {
         onClose={() => setIsChatOpen(false)}
       />
 
+      {/* AI Analysis Live Findings Result Card */}
+      {analysisResult && (
+        <div className="mb-8 p-5 border border-orange-500/50 bg-orange-950/20 rounded font-mono text-xs shadow-xl">
+          <div className="flex justify-between items-center mb-3 pb-2 border-b border-orange-900/40">
+            <span className="text-orange-400 font-bold tracking-widest uppercase flex items-center gap-2">
+              ⚡ LIVE ANALYSIS FINDINGS
+            </span>
+            <button
+              onClick={() => setAnalysisResult(null)}
+              className="text-neutral-500 hover:text-white px-2 py-0.5 text-xs border border-white/10 rounded"
+            >
+              ✕ DISMISS
+            </button>
+          </div>
+
+          <div className="max-h-80 overflow-y-auto space-y-3 text-neutral-300">
+            {analysisResult.summary && (
+              <div>
+                <span className="text-[10px] text-neutral-400 font-bold uppercase">Summary:</span>
+                <p className="mt-1 text-zinc-300 leading-relaxed">{analysisResult.summary}</p>
+              </div>
+            )}
+
+            {analysisResult.key_findings && (
+              <div>
+                <span className="text-[10px] text-neutral-400 font-bold uppercase">Key Findings:</span>
+                <ul className="mt-1 list-disc list-inside space-y-1 text-zinc-300">
+                  {analysisResult.key_findings.map((finding: string, i: number) => (
+                    <li key={i}>{finding}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {!analysisResult.summary && (
+              <pre className="whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-300">
+                {typeof analysisResult === "string"
+                  ? analysisResult
+                  : JSON.stringify(analysisResult, null, 2)}
+              </pre>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* AI Pipeline Live Status Bar */}
       {jobStatus !== "idle" && (
-        <div className="mb-8 p-4 border border-orange-500/30 bg-orange-500/[0.03] flex items-center justify-between">
+        <div className="mb-8 p-4 border border-orange-500/30 bg-orange-500/3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className={`h-2.5 w-2.5 rounded-full ${
               jobStatus === "completed" ? "bg-emerald-400" : jobStatus === "failed" ? "bg-red-500" : "bg-orange-400 animate-ping"
@@ -358,7 +507,7 @@ export default function CaseWorkspace() {
         <div className="text-[11px] text-neutral-500 mt-1 mb-5">Bring different intelligence sources into this case workspace.</div>
 
         <div className="grid grid-cols-3 gap-4 mb-4">
-          <div className="border border-white/10 bg-white/[0.01] p-6 text-center hover:border-orange-500/40">
+          <div className="border border-white/10 bg-white/1 p-6 text-center hover:border-orange-500/40">
             <div className="text-xs font-bold text-white">DOCUMENTS / FIR</div>
             <div className="text-[10px] text-neutral-500 mt-1">PDF ONLY</div>
             <button
@@ -370,7 +519,7 @@ export default function CaseWorkspace() {
             </button>
           </div>
 
-          <div className="border border-white/10 bg-white/[0.01] p-6 text-center hover:border-orange-500/40">
+          <div className="border border-white/10 bg-white/1 p-6 text-center hover:border-orange-500/40">
             <div className="text-xs font-bold text-white">CSV / EXCEL</div>
             <div className="text-[10px] text-neutral-500 mt-1">CDR, BANK STATEMENTS</div>
             <button
@@ -382,7 +531,7 @@ export default function CaseWorkspace() {
             </button>
           </div>
 
-          <div className="border border-white/10 bg-white/[0.01] p-6 text-center hover:border-orange-500/40">
+          <div className="border border-white/10 bg-white/1 p-6 text-center hover:border-orange-500/40">
             <div className="text-xs font-bold text-white">IMAGE EVIDENCE</div>
             <div className="text-[10px] text-neutral-500 mt-1">CCTV, SCENE, VEHICLES</div>
             <button
@@ -414,7 +563,7 @@ export default function CaseWorkspace() {
               className="w-full h-20 bg-zinc-900 border border-zinc-800 rounded p-2 text-xs text-zinc-200 outline-none focus:border-orange-500 resize-none"
             />
           </div>
-          <div className="border border-white/10 bg-white/[0.01] p-5">
+          <div className="border border-white/10 bg-white/1 p-5">
             <div className="text-xs font-bold text-white">URL / OSINT INTEL</div>
             <div className="text-[10px] text-neutral-500 mb-3">Reference OSINT or public record link</div>
             <button onClick={() => setModalType("URL")} className="w-full text-left text-xs text-neutral-500 border border-white/10 p-3 bg-black">
@@ -424,19 +573,29 @@ export default function CaseWorkspace() {
         </div>
       </div>
 
+      <div className="mb-3 flex justify-end">
+        <button
+          onClick={() => setIsTimelineOpen(true)}
+          className="border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-[10px] font-bold tracking-widest text-orange-400 transition-colors hover:bg-orange-500 hover:text-black"
+        >
+          VIEW TIMELINE ({incidentsList.length})
+        </button>
+      </div>
+
       {/* Tabs Header */}
-      <div className="border-b border-white/10 mb-6 flex gap-6 text-xs font-bold">
+      <div className="border-b border-white/10 mb-6 flex gap-6 text-xs font-bold overflow-x-auto">
         {[
           { key: "sources", label: `RAW EVIDENCE (${caseData.sources?.length || 0})` },
           { key: "persons", label: `IDENTIFIED PERSONS (${personsList.length})` },
           { key: "unknowns", label: `UNKNOWN IDENTITIES (${unknownsList.length})` },
           { key: "incidents", label: `INCIDENTS (${incidentsList.length})` },
           { key: "relations", label: `RELATIONSHIPS (${relationsList.length})` },
+          { key: "graph", label: `NETWORK GRAPH` },
         ].map((t) => (
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key as ActiveTab)}
-            className={`pb-3 border-b-2 transition-all ${
+            className={`pb-3 border-b-2 transition-all whitespace-nowrap ${
               activeTab === t.key ? "border-orange-500 text-orange-400" : "border-transparent text-neutral-500 hover:text-neutral-300"
             }`}
           >
@@ -454,7 +613,7 @@ export default function CaseWorkspace() {
             </div>
           ) : (
             caseData.sources.map((s: SourceData, i: number) => (
-              <div key={i} onClick={() => setPreviewSource(s)} className="border border-white/10 bg-white/[0.02] p-4 cursor-pointer hover:border-orange-500/30">
+              <div key={i} onClick={() => setPreviewSource(s)} className="border border-white/10 bg-white/2 p-4 cursor-pointer hover:border-orange-500/30">
                 <span className="text-[9px] px-2 py-0.5 bg-orange-500/10 text-orange-400 font-bold">{s.type}</span>
                 <div className="text-xs font-bold text-white mt-2 truncate">{s.title}</div>
                 <div className="text-[10px] text-neutral-500 mt-1">Click to inspect ↗</div>
@@ -464,7 +623,7 @@ export default function CaseWorkspace() {
         </div>
       )}
 
-      {/* Tab 2: Persons (Supports Flat & Nested Backend JSON) */}
+      {/* Tab 2: Persons */}
       {activeTab === "persons" && (
         <div className="space-y-3">
           {personsList.length > 0 ? (
@@ -478,7 +637,7 @@ export default function CaseWorkspace() {
                 const aliases = p.identity?.aliases?.join(", ") || null;
 
                 return (
-                  <div key={idx} className="border border-white/10 bg-white/[0.02] p-4 flex flex-col justify-between">
+                  <div key={idx} className="border border-white/10 bg-white/2 p-4 flex flex-col justify-between">
                     <div>
                       <div className="flex items-center justify-between gap-2">
                         <div className="text-xs font-bold text-white">{name}</div>
@@ -553,12 +712,12 @@ export default function CaseWorkspace() {
                   <div className="mt-3 pt-3 border-t border-zinc-900">
                     <div className="text-[10px] text-zinc-500 font-bold uppercase mb-2">Key Extracted Points:</div>
                     <ul className="space-y-1">
-                    {inc.key_points.map((pt: string, i: number) => (
-                      <li key={i} className="text-[11px] text-zinc-400 flex items-start gap-2">
-                        <span className="text-orange-500 mt-0.5">•</span>
-                        <span>{pt}</span>
-                      </li>
-                    ))}
+                      {inc.key_points.map((pt: string, i: number) => (
+                        <li key={i} className="text-[11px] text-zinc-400 flex items-start gap-2">
+                          <span className="text-orange-500 mt-0.5">•</span>
+                          <span>{pt}</span>
+                        </li>
+                      ))}
                     </ul>
                   </div>
                 )}
@@ -585,23 +744,216 @@ export default function CaseWorkspace() {
               const toName = getEntityName(rel.to?.id || rel.target || "Node B");
 
               return (
-              <div key={idx} className="border border-zinc-800 bg-zinc-950 p-4 rounded">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white">{fromName}</span>
-                  <span className="px-2.5 py-0.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 text-[10px] font-bold uppercase">
-                    ── {rel.type || "LINKED_TO"} ──▶
-                  </span>
-                  <span className="text-xs font-bold text-white">{toName}</span>
+                <div key={idx} className="border border-zinc-800 bg-zinc-950 p-4 rounded">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white">{fromName}</span>
+                    <span className="px-2.5 py-0.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 text-[10px] font-bold uppercase">
+                      ── {rel.type || "LINKED_TO"} ──▶
+                    </span>
+                    <span className="text-xs font-bold text-white">{toName}</span>
+                  </div>
+                  {rel.evidence && (
+                    <p className="text-[11px] text-zinc-400 italic leading-relaxed mt-1">
+                      &quot;{rel.evidence}&quot;
+                    </p>
+                  )}
                 </div>
-                {rel.evidence && (
-                  <p className="text-[11px] text-zinc-400 italic leading-relaxed mt-1">
-                    &quot;{rel.evidence}&quot;
-                  </p>
-                )}
-              </div>
               );
             })
           )}
+        </div>
+      )}
+
+      {/* Tab 6: Network Graph */}
+      {activeTab === "graph" && (
+        <div className="border border-zinc-800 bg-zinc-950 p-6 rounded space-y-6">
+          <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
+            <div>
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                Interactive Link Analysis Network
+              </h3>
+              <p className="text-[11px] text-zinc-500 mt-0.5">
+                Visual entity map generated via AI case reasoning
+              </p>
+            </div>
+            <span className="text-[10px] bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded text-neutral-400">
+              {graphNodes.length} Entities • {graphEdges.length} Links
+            </span>
+          </div>
+
+          {loadingGraph ? (
+            <div className="p-12 text-center text-xs text-neutral-500">
+              Generating graph layout...
+            </div>
+          ) : graphNodes.length === 0 ? (
+            <div className="p-12 text-center text-xs text-neutral-500 border border-dashed border-zinc-800 rounded">
+              No graph entities found. Click &quot;⚡ RUN ANALYSIS&quot; to compute network topology.
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Circular SVG Visual Canvas */}
+              <div className="border border-zinc-850 bg-black/60 rounded-lg p-4 overflow-x-auto">
+                <svg viewBox="0 0 820 440" className="w-full min-w-190 h-100 select-none">
+                  <defs>
+                    <marker
+                      id="arrow-investigator"
+                      viewBox="0 0 10 10"
+                      refX="24"
+                      refY="5"
+                      markerWidth="6"
+                      markerHeight="6"
+                      orient="auto-start-reverse"
+                    >
+                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ea580c" />
+                    </marker>
+                  </defs>
+
+                  {(() => {
+                    const width = 820;
+                    const height = 440;
+                    const centerX = width / 2;
+                    const centerY = height / 2;
+                    const radius = 160;
+
+                    const coords: Record<string, { x: number; y: number }> = {};
+                    graphNodes.forEach((node, idx) => {
+                      const angle = (2 * Math.PI * idx) / graphNodes.length;
+                      coords[node.id] = {
+                        x: centerX + radius * Math.cos(angle),
+                        y: centerY + radius * Math.sin(angle),
+                      };
+                    });
+
+                    return (
+                      <>
+                        {/* Connecting Lines */}
+                        {graphEdges.map((e, i) => {
+                          const fId = e.from?.id || e.source || "";
+                          const tId = e.to?.id || e.target || "";
+                          const start = coords[fId];
+                          const end = coords[tId];
+
+                          if (!start || !end) return null;
+
+                          return (
+                            <g key={`edge-${i}`}>
+                              <line
+                                x1={start.x}
+                                y1={start.y}
+                                x2={end.x}
+                                y2={end.y}
+                                stroke="#ea580c"
+                                strokeWidth="1.5"
+                                strokeDasharray="3 3"
+                                markerEnd="url(#arrow-investigator)"
+                                opacity="0.6"
+                              />
+                            </g>
+                          );
+                        })}
+
+                        {/* Nodes */}
+                        {graphNodes.map((n, i) => {
+                          const pt = coords[n.id];
+                          if (!pt) return null;
+                          const isPerson = n.type === "PERSON";
+                          const isUnknown = n.type === "UNKNOWN";
+
+                          return (
+                            <g key={`node-${i}`} className="cursor-pointer">
+                              <circle
+                                cx={pt.x}
+                                cy={pt.y}
+                                r="18"
+                                fill={isPerson ? "#7c2d12" : isUnknown ? "#581c87" : "#27272a"}
+                                stroke={isPerson ? "#ea580c" : isUnknown ? "#c084fc" : "#71717a"}
+                                strokeWidth="2"
+                              />
+                              <text
+                                x={pt.x}
+                                y={pt.y + 4}
+                                textAnchor="middle"
+                                fill="#ffffff"
+                                fontSize="9"
+                                fontWeight="bold"
+                              >
+                                {isPerson ? "👤" : isUnknown ? "🎭" : "📌"}
+                              </text>
+                              <text
+                                x={pt.x}
+                                y={pt.y + 30}
+                                textAnchor="middle"
+                                fill="#e4e4e7"
+                                fontSize="10"
+                                fontFamily="monospace"
+                              >
+                                {n.label?.slice(0, 16) || n.id.slice(0, 8)}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
+                </svg>
+              </div>
+
+              {/* Edge Evidence List */}
+              <div className="space-y-2">
+                <div className="text-[10px] text-neutral-400 font-bold uppercase mb-2">
+                  Targeted Links & Evidence
+                </div>
+                {graphEdges.map((e, i) => {
+                  const fId = e.from?.id || e.source || "";
+                  const tId = e.to?.id || e.target || "";
+                  const fLabel = graphNodes.find((n) => n.id === fId)?.label || fId;
+                  const tLabel = graphNodes.find((n) => n.id === tId)?.label || tId;
+
+                  return (
+                    <div
+                      key={i}
+                      className="text-xs font-mono bg-zinc-950 border border-zinc-800 p-2.5 rounded flex flex-col gap-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-white font-bold">{fLabel}</span>
+                        <span className="text-orange-400 font-bold px-2 text-[10px] bg-orange-500/10 border border-orange-500/30 rounded py-0.5">
+                          ──[{e.type || "LINKED_TO"}]──▶
+                        </span>
+                        <span className="text-white font-bold">{tLabel}</span>
+                      </div>
+                      {e.evidence && (
+                        <p className="text-[10px] text-neutral-500 italic pt-1 border-t border-zinc-900">
+                          &quot;{e.evidence}&quot;
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isTimelineOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          onClick={() => setIsTimelineOpen(false)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-4xl overflow-y-auto"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-2 flex justify-end">
+              <button
+                onClick={() => setIsTimelineOpen(false)}
+                className="border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-neutral-400 hover:border-orange-500 hover:text-white"
+              >
+                ✕ CLOSE
+              </button>
+            </div>
+            <CaseTimelineView incidents={incidentsList} themeColor="orange" />
+          </div>
         </div>
       )}
 
@@ -671,7 +1023,7 @@ export default function CaseWorkspace() {
               )}
 
               {previewSource.type !== "IMAGE" && previewSource.type !== "NOTES" && previewSource.type !== "URL" && (
-                <div className="flex flex-col items-center justify-center text-center p-8 border border-white/10 bg-white/[0.01] rounded max-w-md">
+                <div className="flex flex-col items-center justify-center text-center p-8 border border-white/10 bg-white/1 rounded max-w-md">
                   <div className="text-4xl mb-3">📁</div>
                   <h4 className="text-sm font-bold text-white mb-2">{previewSource.title}</h4>
                   <p className="text-xs text-neutral-400 mb-6">Download to inspect document locally.</p>
@@ -692,6 +1044,18 @@ export default function CaseWorkspace() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+
+      {/* Printable Forensic Dossier */}
+      <ForensicDossierPrint
+        caseData={caseData}
+        persons={personsList}
+        unknowns={unknownsList}
+        incidents={incidentsList}
+        relations={relationsList}
+        graphNodes={graphNodes}
+        graphEdges={graphEdges}
+      />
+    </>
   );
 }
