@@ -91,11 +91,6 @@ export default function ChatbotWidget() {
         </div>
       )}
 
-      {!open && (
-        <span className="mb-2 rounded-full border border-white/10 bg-black/50 px-2.5 py-0.5 text-[10px] font-bold tracking-[0.14em] text-red-300/90">
-          CHATBOT
-        </span>
-      )}
       <button
         onClick={() => setOpen((o) => !o)}
         aria-label={open ? "Close chatbot" : "Open chatbot"}
