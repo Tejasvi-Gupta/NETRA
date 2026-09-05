@@ -4,6 +4,9 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import CaseTimelineView from "@/components/CaseTimelineView";
 import ForensicDossierPrint from "@/components/ForensicDossierPrint";
+import SourcePreviewModal from "@/components/SourcePreviewModal";
+import CaseNetworkMap from "@/components/CaseNetworkMap";
+import { formatInvestigator } from "@/lib/auth";
 
 interface SourceData {
   type: string;
@@ -263,7 +266,7 @@ export default function AdminCaseView() {
 
           <div className="mt-4 text-[12px] text-neutral-500">Investigator</div>
           <div className="mt-1 text-[14px] font-medium leading-5 text-white">
-            {caseData.assigned_investigator || "Unassigned"}
+            {formatInvestigator(caseData.assigned_investigator)}
           </div>
 
           <div className="mt-4 text-[12px] text-neutral-500">Analysis</div>
@@ -517,179 +520,14 @@ export default function AdminCaseView() {
         </div>
       )}
 
-      {/* Tab 6: Network Graph (Interactive Visual Canvas) */}
       {activeTab === "graph" && (
-        <div className="border border-zinc-800 bg-zinc-950 p-6 rounded space-y-6">
-          <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
-            <div>
-              <h3 className="text-[14px] font-medium text-white">
-                Network map
-              </h3>
-              <p className="mt-0.5 text-[13px] text-zinc-500">
-                People and connections found in this case
-              </p>
-            </div>
-            <span className="rounded border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-[12px] text-neutral-400">
-              {graphNodes.length} people · {graphEdges.length} links
-            </span>
-          </div>
-
-          {loadingGraph ? (
-            <div className="p-12 text-center text-xs text-neutral-500">
-              Building the network map…
-            </div>
-          ) : graphNodes.length === 0 ? (
-            <div className="p-12 text-center text-xs text-neutral-500 border border-dashed border-zinc-850 rounded">
-              No network to show yet. Run analysis first.
-            </div>
-          ) : (
-            <div className="space-y-6">
-              <div className="border border-zinc-850 bg-black/60 rounded-lg p-4 overflow-x-auto">
-                <svg
-                  viewBox="0 0 820 440"
-                  className="w-full min-w-[760px] h-[400px] select-none"
-                >
-                  <defs>
-                    <marker
-                      id="arrow"
-                      viewBox="0 0 10 10"
-                      refX="24"
-                      refY="5"
-                      markerWidth="6"
-                      markerHeight="6"
-                      orient="auto-start-reverse"
-                    >
-                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
-                    </marker>
-                  </defs>
-
-                  {(() => {
-                    const width = 820;
-                    const height = 440;
-                    const centerX = width / 2;
-                    const centerY = height / 2;
-                    const radius = 160;
-
-                    const coords: Record<string, { x: number; y: number }> = {};
-                    graphNodes.forEach((node, idx) => {
-                      const angle = (2 * Math.PI * idx) / graphNodes.length;
-                      coords[node.id] = {
-                        x: centerX + radius * Math.cos(angle),
-                        y: centerY + radius * Math.sin(angle),
-                      };
-                    });
-
-                    return (
-                      <>
-                        {graphEdges.map((e, i) => {
-                          const fId = (typeof e.from === "object" ? e.from?.id : e.from) || e.source || "";
-                          const tId = (typeof e.to === "object" ? e.to?.id : e.to) || e.target || "";
-                          const start = coords[fId];
-                          const end = coords[tId];
-
-                          if (!start || !end) return null;
-
-                          return (
-                            <g key={`edge-${i}`}>
-                              <line
-                                x1={start.x}
-                                y1={start.y}
-                                x2={end.x}
-                                y2={end.y}
-                                stroke="#dc2626"
-                                strokeWidth="1.5"
-                                strokeDasharray="3 3"
-                                markerEnd="url(#arrow)"
-                                opacity="0.6"
-                              />
-                            </g>
-                          );
-                        })}
-
-                        {graphNodes.map((n, i) => {
-                          const pt = coords[n.id];
-                          if (!pt) return null;
-                          const isPerson = n.type === "PERSON";
-                          const isUnknown = n.type === "UNKNOWN";
-
-                          return (
-                            <g
-                              key={`node-${i}`}
-                              onClick={() => setSelectedNode(n)}
-                              className="cursor-pointer group transition-transform hover:scale-110"
-                            >
-                              <circle
-                                cx={pt.x}
-                                cy={pt.y}
-                                r="20"
-                                fill={isPerson ? "#7f1d1d" : isUnknown ? "#581c87" : "#27272a"}
-                                stroke={isPerson ? "#ef4444" : isUnknown ? "#c084fc" : "#71717a"}
-                                strokeWidth="2"
-                                className="group-hover:stroke-white transition-colors"
-                              />
-                              <text
-                                x={pt.x}
-                                y={pt.y + 4}
-                                textAnchor="middle"
-                                fill="#ffffff"
-                                fontSize="10"
-                                fontWeight="bold"
-                              >
-                                {isPerson ? "👤" : isUnknown ? "🎭" : "📌"}
-                              </text>
-                              <text
-                                x={pt.x}
-                                y={pt.y + 32}
-                                textAnchor="middle"
-                                fill="#e4e4e7"
-                                fontSize="10"
-                                fontFamily="monospace"
-                              >
-                                {n.label?.slice(0, 16) || n.id.slice(0, 8)}
-                              </text>
-                            </g>
-                          );
-                        })}
-                      </>
-                    );
-                  })()}
-                </svg>
-              </div>
-
-              <div className="space-y-2">
-                <div className="mb-2 text-[12px] text-neutral-400">
-                  Connections
-                </div>
-                {graphEdges.map((e, i) => {
-                  const fId = (typeof e.from === "object" ? e.from?.id : e.from) || e.source || "";
-                  const tId = (typeof e.to === "object" ? e.to?.id : e.to) || e.target || "";
-                  const fLabel = graphNodes.find((n) => n.id === fId)?.label || fId;
-                  const tLabel = graphNodes.find((n) => n.id === tId)?.label || tId;
-
-                  return (
-                    <div
-                      key={i}
-                      className="text-xs font-mono bg-zinc-950 border border-zinc-800 p-2.5 rounded flex flex-col gap-1.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-white font-bold">{fLabel}</span>
-                        <span className="rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-300">
-                          {humanize(e.type, "Linked to")}
-                        </span>
-                        <span className="text-white font-bold">{tLabel}</span>
-                      </div>
-                      {e.evidence && (
-                        <p className="text-[10px] text-neutral-500 italic pt-1 border-t border-zinc-900">
-                          &quot;{e.evidence}&quot;
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+        <CaseNetworkMap
+          nodes={graphNodes}
+          edges={graphEdges}
+          loading={loadingGraph}
+          accent="red"
+          onSelectNode={setSelectedNode}
+        />
       )}
 
       {/* Node Inspector Slide-over Panel */}
@@ -779,57 +617,8 @@ export default function AdminCaseView() {
         </div>
       )}
 
-      {/* Source Preview Modal */}
       {previewSource && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
-          <div className="flex h-[80vh] w-full max-w-3xl flex-col border border-white/20 bg-[#0c0c0d] shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-              <div className="flex items-center gap-3">
-                <span className="bg-red-500/10 px-2 py-0.5 text-[12px] text-red-400">
-                  {humanize(previewSource.type)}
-                </span>
-                <h3 className="max-w-md truncate text-sm font-bold text-white">{previewSource.title}</h3>
-              </div>
-              <button onClick={() => setPreviewSource(null)} className="px-2 text-sm text-neutral-500 hover:text-white">✕</button>
-            </div>
-
-            <div className="flex-1 overflow-hidden bg-[#050505] p-6 flex items-center justify-center">
-              {previewSource.type === "IMAGE" && (
-                <div className="flex h-full w-full items-center justify-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={previewSource.content} alt={previewSource.title} className="max-h-full max-w-full object-contain" />
-                </div>
-              )}
-
-              {(previewSource.type === "NOTES" || previewSource.type === "URL") && (
-                <div className="h-full w-full overflow-y-auto p-4 font-mono text-xs text-neutral-300 whitespace-pre-wrap leading-relaxed">
-                  {previewSource.content}
-                </div>
-              )}
-
-              {previewSource.type !== "IMAGE" && previewSource.type !== "NOTES" && previewSource.type !== "URL" && (
-                <div className="flex flex-col items-center justify-center text-center p-8 border border-white/10 bg-white/[0.01] rounded max-w-md">
-                  <div className="text-4xl mb-3">📁</div>
-                  <h4 className="text-sm font-bold text-white mb-2">{previewSource.title}</h4>
-                  <p className="text-xs text-neutral-400 mb-6">
-                    File attached by the investigator. Download to review the full contents.
-                  </p>
-                  {previewSource.content.startsWith("data:") ? (
-                    <a
-                      href={previewSource.content}
-                      download={previewSource.title}
-                      className="bg-red-600 px-6 py-3 text-[13px] font-medium text-white transition-colors hover:bg-red-500"
-                    >
-                      Download file
-                    </a>
-                  ) : (
-                    <span className="text-xs text-red-400">Invalid file data.</span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <SourcePreviewModal source={previewSource} onClose={() => setPreviewSource(null)} />
       )}
     </div>
     </div>

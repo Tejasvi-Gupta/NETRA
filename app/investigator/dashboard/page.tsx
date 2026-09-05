@@ -13,17 +13,9 @@ interface CaseItem {
   sources?: { type: string; title: string; content: string; uploaded_at?: string }[];
 }
 
-interface ActivityItem {
-  _id: string;
-  description: string;
-  event_type: string;
-  createdAt: string;
-}
-
 export default function InvestigatorDashboard() {
   const router = useRouter();
   const [cases, setCases] = useState<CaseItem[]>([]);
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(new Date());
   const [search, setSearch] = useState("");
@@ -51,12 +43,8 @@ export default function InvestigatorDashboard() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [cRes, aRes] = await Promise.all([
-          fetch("/api/cases").then((r) => r.json()),
-          fetch("/api/activities").then((r) => r.json()),
-        ]);
+        const cRes = await fetch("/api/cases").then((r) => r.json());
         if (cRes.success) setCases(cRes.cases || []);
-        if (aRes.success) setActivities(aRes.activities || []);
       } finally {
         setLoading(false);
       }
@@ -117,14 +105,9 @@ export default function InvestigatorDashboard() {
     CLOSED: "text-neutral-500",
   };
 
-  const activityDot: Record<string, string> = {
-    CASE_CREATED: "bg-cyan-400",
-    CASE_STATUS_CHANGED: "bg-amber-400",
-    EVIDENCE_ADDED: "bg-emerald-400",
-  };
-
   function handleLogout() {
     localStorage.removeItem("netra_role");
+    localStorage.removeItem("netra_display_name");
     router.push("/login");
   }
 
@@ -154,11 +137,18 @@ export default function InvestigatorDashboard() {
               Intelligence Workspace
             </h1>
             <p className="mt-2 text-[13px] leading-6 text-neutral-500">
-              Full-system view of active investigations and personnel.
+              Your assigned investigations and case workload.
             </p>
           </div>
 
           <div className="flex w-full min-w-0 flex-wrap items-center gap-3 lg:w-auto">
+            <button
+              onClick={() => router.push("/cases/new")}
+              className="h-10 shrink-0 rounded-lg border border-red-500/35 bg-red-500/[0.12] px-4 text-[11px] font-semibold tracking-[0.12em] text-red-200 transition-colors hover:border-red-400/60 hover:bg-red-500/20 hover:text-white"
+            >
+              + ADD NEW CASE
+            </button>
+
             <label className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-white/[0.12] bg-white/[0.04] px-3.5 transition-colors focus-within:border-white/25 focus-within:bg-white/[0.07] sm:min-w-[220px] lg:w-[260px] lg:flex-none">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" strokeWidth="1.75" aria-hidden>
                 <circle cx="11" cy="11" r="7" />
@@ -270,30 +260,6 @@ export default function InvestigatorDashboard() {
                 </div>
               </div>
             ))
-          )}
-        </div>
-
-        <div className="mb-4 text-xs font-bold tracking-[3px] text-neutral-200">RECENT SYSTEM ACTIVITY</div>
-
-        <div className="mb-8 border border-white/10 bg-white/[0.01] p-4 sm:p-6">
-          {activities.length === 0 ? (
-            <div className="py-8 text-center text-xs text-neutral-500">No activity yet.</div>
-          ) : (
-            <div className="relative border-l border-white/10 pl-5 sm:pl-6">
-              {activities.slice(0, 6).map((a) => (
-                <div key={a._id} className="relative mb-7 last:mb-0">
-                  <span
-                    className={`absolute -left-[23px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-[#050505] sm:-left-[31px] ${
-                      activityDot[a.event_type] ?? "bg-neutral-500"
-                    }`}
-                  />
-                  <div className="text-[10px] tracking-widest text-neutral-500">
-                    {relativeTime(a.createdAt).toUpperCase()}
-                  </div>
-                  <div className="mt-1 pr-2 text-[13px] leading-6 break-words text-white">{a.description}</div>
-                </div>
-              ))}
-            </div>
           )}
         </div>
       </div>

@@ -12,7 +12,7 @@ export default function ChatbotWidget() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: "welcome", sender: "assistant", text: "NETRA Copilot online. Ask about cases, entities, or investigation patterns." },
+    { id: "welcome", sender: "assistant", text: "Workspace chatbot. Ask about any case, entity, or investigation pattern." },
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -26,27 +26,30 @@ export default function ChatbotWidget() {
     setMessages((prev) => [
       ...prev,
       userMsg,
-      { id: crypto.randomUUID(), sender: "assistant", text: "Copilot analysis engine is not yet connected. This response is a placeholder." },
+      { id: crypto.randomUUID(), sender: "assistant", text: "Chatbot analysis engine is not yet connected. This response is a placeholder." },
     ]);
     setInput("");
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 font-mono print:hidden">
+    <div className="fixed inset-x-4 bottom-6 z-50 flex max-w-full flex-col items-end font-mono print:hidden sm:inset-x-auto sm:right-6">
       {open && (
-        <div className="relative mb-3 flex h-[440px] w-[340px] flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0c0c0e]/70 shadow-[0_24px_64px_rgba(0,0,0,0.55),0_0_36px_rgba(239,68,68,0.12),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl">
+        <div className="relative mb-3 flex h-[440px] max-h-[calc(100dvh-8rem)] w-full max-w-[340px] flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0c0c0e]/70 shadow-[0_24px_64px_rgba(0,0,0,0.55),0_0_36px_rgba(239,68,68,0.12),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl">
           <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-white/12 via-red-500/[0.06] to-transparent" />
           <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-red-500/15 blur-3xl" />
 
           <div className="relative flex items-center justify-between border-b border-white/10 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)] animate-pulse" />
-              <span className="text-[11px] font-bold tracking-[0.15em] text-white">NETRA COPILOT</span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" />
+                <span className="text-[11px] font-bold tracking-[0.15em] text-white">NETRA CHATBOT</span>
+              </div>
+              <p className="mt-1 pl-4 text-[10px] tracking-wide text-neutral-500">Workspace · all cases</p>
             </div>
             <button
               onClick={() => setOpen(false)}
               className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-white/10 hover:text-red-300"
-              aria-label="Close copilot"
+              aria-label="Close chatbot"
             >
               ✕
             </button>
@@ -74,8 +77,8 @@ export default function ChatbotWidget() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                placeholder="Ask NETRA Copilot…"
-                className="flex-1 bg-transparent text-[12px] text-neutral-200 outline-none placeholder:text-neutral-500"
+                placeholder="Ask the chatbot…"
+                className="min-w-0 flex-1 bg-transparent text-[12px] text-neutral-200 outline-none placeholder:text-neutral-500"
               />
               <button
                 onClick={handleSend}
@@ -88,8 +91,14 @@ export default function ChatbotWidget() {
         </div>
       )}
 
+      {!open && (
+        <span className="mb-2 rounded-full border border-white/10 bg-black/50 px-2.5 py-0.5 text-[10px] font-bold tracking-[0.14em] text-red-300/90">
+          CHATBOT
+        </span>
+      )}
       <button
         onClick={() => setOpen((o) => !o)}
+        aria-label={open ? "Close chatbot" : "Open chatbot"}
         className="flex h-14 w-14 items-center justify-center rounded-full border border-white/20 bg-gradient-to-b from-[#2a1212] to-[#0a0a0a] text-red-300 shadow-[0_10px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(239,68,68,0.28),inset_0_1px_0_rgba(255,255,255,0.2)] transition-transform hover:scale-105 hover:text-red-200"
       >
         {open ? (

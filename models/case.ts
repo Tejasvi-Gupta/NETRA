@@ -24,7 +24,7 @@ const CaseSchema = new Schema(
       enum: ["ACTIVE", "UNDER_REVIEW", "CLOSED"], 
       default: "ACTIVE" 
     },
-    assigned_investigator: { type: String, default: "Netra Investigator" },
+    assigned_investigator: { type: String, default: "Unassigned" },
     investigation_summary: { type: String, default: "" },
     last_signal_at: { type: Date, default: Date.now },
     sources: [SourceSchema],

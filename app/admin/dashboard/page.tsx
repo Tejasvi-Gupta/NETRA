@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { formatInvestigator } from "@/lib/auth";
 
 interface CaseItem {
   _id: string;
@@ -140,6 +141,7 @@ export default function AdminDashboardPage() {
 
   function handleLogout() {
     localStorage.removeItem("netra_role");
+    localStorage.removeItem("netra_display_name");
     router.push("/login");
   }
 
@@ -172,13 +174,6 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="flex w-full min-w-0 flex-wrap items-center gap-3 lg:w-auto">
-            <button
-              onClick={() => router.push("/cases/new")}
-              className="h-10 shrink-0 rounded-lg border border-red-500/35 bg-red-500/[0.12] px-4 text-[11px] font-semibold tracking-[0.12em] text-red-200 transition-colors hover:border-red-400/60 hover:bg-red-500/20 hover:text-white"
-            >
-              + ADD NEW CASE
-            </button>
-
             <label className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-white/[0.12] bg-white/[0.04] px-3.5 transition-colors focus-within:border-white/25 focus-within:bg-white/[0.07] sm:min-w-[220px] lg:w-[260px] lg:flex-none">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" strokeWidth="1.75" aria-hidden>
                 <circle cx="11" cy="11" r="7" />
@@ -296,7 +291,7 @@ export default function AdminDashboardPage() {
                 <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 lg:mt-0 lg:contents">
                   <div className="min-w-0 text-[12px] leading-5 text-neutral-400">
                     <span className="mr-1 text-neutral-600 lg:hidden">Investigator</span>
-                    {c.assigned_investigator}
+                    {formatInvestigator(c.assigned_investigator)}
                   </div>
                   <div className={`flex items-center gap-2 text-[12px] tracking-wide ${priorityColor[c.priority]}`}>
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />

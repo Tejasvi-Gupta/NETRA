@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       case_type: body.case_type || "General Investigation",
       priority: body.priority || "MEDIUM",
       status: body.status || "ACTIVE",
-      assigned_investigator: body.assigned_investigator || "Lead Investigator",
+      assigned_investigator: body.assigned_investigator || "Unassigned",
       investigation_summary: body.investigation_summary || "",
       ai_case_id: aiCaseId,
       ai_extracted_data: null,

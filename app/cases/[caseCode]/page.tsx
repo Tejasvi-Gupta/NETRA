@@ -1,11 +1,13 @@
 "use client";
 
-import Image from "next/image";
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import CaseChatDrawer from "@/components/CaseChatDrawer";
 import CaseTimelineView from "@/components/CaseTimelineView";
 import ForensicDossierPrint from "@/components/ForensicDossierPrint";
+import SourcePreviewModal from "@/components/SourcePreviewModal";
+import CaseNetworkMap from "@/components/CaseNetworkMap";
+import { formatInvestigator } from "@/lib/auth";
 
 interface SourceData {
   type: string;
@@ -71,6 +73,7 @@ interface CaseData {
   case_code: string;
   title: string;
   status: string;
+  assigned_investigator?: string;
   investigation_summary?: string;
   sources?: SourceData[];
   ai_case_id?: string;
@@ -120,23 +123,26 @@ function humanize(value?: string | null, fallback = "") {
   return value.replace(/[_-]+/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export default function CaseWorkspace() {
+function isActiveTab(value: string | null): value is ActiveTab {
+  return value === "sources" || value === "persons" || value === "unknowns" || value === "incidents" || value === "relations" || value === "graph";
+}
+
+export default function CaseWorkspacePage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-[14px] text-neutral-500">Loading case…</div>}>
+      <CaseWorkspace />
+    </Suspense>
+  );
+}
+
+function CaseWorkspace() {
   const { caseCode } = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [caseData, setCaseData] = useState<CaseData | null>(null);
-  const [modalType, setModalType] = useState<string | null>(null);
-  const [sourceTitle, setSourceTitle] = useState("");
-  const [sourceContent, setSourceContent] = useState("");
   const [previewSource, setPreviewSource] = useState<SourceData | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [notesText, setNotesText] = useState("");
-  const [isSubmittingNotes, setIsSubmittingNotes] = useState(false);
-
-  // AI Pipeline States
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [jobStatus, setJobStatus] = useState<"idle" | "queued" | "processing" | "completed" | "failed">("idle");
   const [activeTab, setActiveTab] = useState<ActiveTab>("sources");
 
   // Analysis & Graph States
@@ -154,9 +160,14 @@ export default function CaseWorkspace() {
   const [relEvidence, setRelEvidence] = useState("");
   const [relSubmitting, setRelSubmitting] = useState(false);
 
-  const docInputRef = useRef<HTMLInputElement>(null);
-  const csvInputRef = useRef<HTMLInputElement>(null);
-  const imgInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (isActiveTab(tab)) {
+      setActiveTab(tab);
+      return;
+    }
+    if (!tab) setActiveTab("sources");
+  }, [searchParams]);
 
   const logActivity = async (action: string) => {
     try {
@@ -287,148 +298,6 @@ export default function CaseWorkspace() {
     }
   };
 
-  // Polling via Next.js Proxy
-  useEffect(() => {
-    if (!jobId || jobStatus === "completed" || jobStatus === "failed") return;
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/ai/job/${jobId}`);
-        const data = await res.json();
-
-        if (data && data.status) {
-          const rawStatus = String(data.status).toUpperCase();
-
-          if (rawStatus === "COMPLETED" || data.steps?.persistence === "COMPLETED") {
-            setJobStatus("completed");
-            clearInterval(interval);
-
-            if (caseData?.ai_case_id) {
-              await syncAiData(caseData.ai_case_id);
-            }
-          } else if (rawStatus === "FAILED" && data.error) {
-            setJobStatus("failed");
-            clearInterval(interval);
-          } else {
-            setJobStatus("processing");
-          }
-        }
-      } catch (e) {
-        console.error("Job polling error:", e);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [jobId, jobStatus, caseData?.ai_case_id, syncAiData]);
-
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>, type: string) {
-    const file = e.target.files?.[0];
-    if (!file || !caseData) return;
-
-    if (type === "DOCUMENT" && !file.name.toLowerCase().endsWith(".pdf")) {
-      alert("Please upload a valid .pdf file.");
-      e.target.value = "";
-      return;
-    }
-
-    setSubmitting(true);
-    const reader = new FileReader();
-
-    reader.onload = async () => {
-      const base64Data = reader.result as string;
-
-      if (caseData.ai_case_id && (type === "DOCUMENT" || type === "IMAGE")) {
-        try {
-          setJobStatus("queued");
-          const uploadData = new FormData();
-          uploadData.append("file", file);
-          uploadData.append("ai_case_id", caseData.ai_case_id);
-
-          const res = await fetch("/api/ai/upload", {
-            method: "POST",
-            body: uploadData,
-          });
-
-          const result = await res.json();
-          if (res.ok && result.job_id) {
-            setJobId(result.job_id);
-            setJobStatus("processing");
-          } else {
-            setJobStatus("failed");
-          }
-        } catch {
-          setJobStatus("failed");
-        }
-      }
-
-      await saveSourceToDB(type, file.name, base64Data);
-    };
-
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  }
-
-  async function saveSourceToDB(type: string, title: string, content: string) {
-    try {
-      const res = await fetch(`/api/cases/${caseCode}/sources`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type,
-          title,
-          content,
-          ai_case_id: caseData?.ai_case_id,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setModalType(null);
-        setSourceTitle("");
-        setSourceContent("");
-        void logActivity(`Ingested new ${type.toLowerCase()} evidence: ${title}`);
-        fetchCase();
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleModalSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!sourceTitle || !sourceContent || !modalType) return;
-    setSubmitting(true);
-    await saveSourceToDB(modalType, sourceTitle, sourceContent);
-  }
-
-  const handleNotesSubmit = async () => {
-    if (!notesText.trim() || isSubmittingNotes) return;
-    setIsSubmittingNotes(true);
-
-    try {
-      const res = await fetch("/api/ai/interrogate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ai_case_id: caseData?.ai_case_id,
-          notes: notesText,
-        }),
-      });
-
-      if (res.ok) {
-        alert("Interview notes added.");
-        void logActivity("Submitted interrogation statement intel for AI linking");
-        setNotesText("");
-        if (caseData?.ai_case_id) syncAiData(caseData.ai_case_id);
-      } else {
-        alert("Could not add those notes. Please try again.");
-      }
-    } catch {
-      alert("Could not add those notes. Please try again.");
-    } finally {
-      setIsSubmittingNotes(false);
-    }
-  };
-
   const aiData = caseData?.ai_extracted_data || {};
   const personsList = useMemo(() => aiData.persons || [], [aiData.persons]);
   const unknownsList = aiData.unknown_identities || [];
@@ -521,16 +390,16 @@ export default function CaseWorkspace() {
     window.print();
   };
 
+  function selectTab(tab: ActiveTab) {
+    setActiveTab(tab);
+    const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
+    const next = tab === "sources" ? `/cases/${code}` : `/cases/${code}?tab=${tab}`;
+    router.replace(next, { scroll: false });
+  }
+
   return (
     <>
-      <div className="mx-auto min-h-screen max-w-295 bg-[#050505] p-8 text-neutral-200 print:hidden">
-      <input type="file" ref={docInputRef} onChange={(e) => handleFileUpload(e, "DOCUMENT")} accept=".pdf" className="hidden" />
-      <input type="file" ref={csvInputRef} onChange={(e) => handleFileUpload(e, "CSV")} accept=".csv,.xlsx" className="hidden" />
-      <input type="file" ref={imgInputRef} onChange={(e) => handleFileUpload(e, "IMAGE")} accept="image/*" className="hidden" />
-
-      <button onClick={() => router.push("/investigator/dashboard")} className="text-xs text-neutral-500 hover:text-white mb-4">
-        ← Intelligence Workspace
-        </button>
+      <div className="mx-auto min-h-screen max-w-295 p-6 text-neutral-200 print:hidden sm:p-8">
 
       {nexusMatches.length > 0 && (
         <div className="mb-6 border border-red-500/50 bg-red-950/25 p-4 rounded text-xs font-mono">
@@ -559,50 +428,57 @@ export default function CaseWorkspace() {
         </div>
       )}
 
-      <div className="flex justify-between items-start mb-6 border-b border-white/10 pb-6">
-        <div>
-          <span className="text-xs text-orange-500 font-bold">{caseData.case_code}</span>
-          <h1 className="text-3xl font-black text-white mt-1">{caseData.title}</h1>
-          <p className="text-xs text-neutral-400 mt-2">{caseData.investigation_summary || "No summary provided."}</p>
+      <div className="mb-6 flex flex-col justify-between gap-4 border-b border-white/10 pb-6 lg:flex-row lg:items-start">
+        <div className="min-w-0">
+          <span className="text-[13px] font-medium text-orange-400">{caseData.case_code}</span>
+          <h1 className="mt-1 text-[28px] font-semibold tracking-tight text-white sm:text-[32px]">{caseData.title}</h1>
+          <p className="mt-2 text-[13px] leading-6 text-neutral-500">{caseData.investigation_summary || "No summary provided."}</p>
+          <p className="mt-3 text-[13px] text-neutral-400">
+            Investigator: <span className="text-neutral-200">{formatInvestigator(caseData.assigned_investigator)}</span>
+          </p>
         </div>
-        <div className="text-right flex flex-col items-end gap-2">
-          <div className="flex items-center gap-2">
-            <span className="border border-orange-500/30 bg-orange-500/10 px-2.5 py-1 text-[13px] text-orange-300">
+        <div className="flex shrink-0 flex-col items-start gap-2 lg:items-end">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-lg border border-orange-500/30 bg-orange-500/10 px-2.5 py-1.5 text-[13px] text-orange-300">
               {humanize(caseData.status, caseData.status)}
             </span>
-                <button
+            <button
+              onClick={() => router.push(`/cases/${caseData.case_code}/add`)}
+              className="h-9 rounded-lg border border-orange-600/50 bg-orange-950/40 px-3 text-[13px] font-medium text-orange-200 transition hover:border-orange-400/60 hover:text-white"
+            >
+              Add files
+            </button>
+            <button
               onClick={() => setIsChatOpen(true)}
-              className="rounded border border-orange-500/40 bg-zinc-900 px-3 py-1 text-[13px] text-orange-300 transition hover:bg-orange-500 hover:text-black"
+              className="h-9 rounded-lg border border-orange-500/40 bg-zinc-900 px-3 text-[13px] text-orange-300 transition hover:border-orange-400/60 hover:text-white"
             >
               Ask copilot
             </button>
             <button
               onClick={handleRunAnalysis}
               disabled={analyzing || !caseData.ai_case_id}
-              className="rounded border border-orange-600/50 bg-orange-950/40 px-3 py-1 text-[13px] font-medium text-orange-300 transition hover:bg-orange-600 hover:text-black disabled:opacity-50"
+              className="h-9 rounded-lg border border-orange-600/50 bg-orange-950/40 px-3 text-[13px] font-medium text-orange-200 transition hover:border-orange-400/60 hover:text-white disabled:opacity-50"
             >
               {analyzing ? "Analyzing…" : "Run analysis"}
             </button>
             <button
               onClick={() => caseData?.ai_case_id && syncAiData(caseData.ai_case_id)}
-              className="rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-[13px] text-zinc-300 hover:border-white"
+              className="h-9 rounded-lg border border-white/[0.12] bg-white/[0.04] px-3 text-[13px] text-neutral-200 hover:border-white/25 hover:text-white"
             >
               Refresh
             </button>
             <button
               onClick={handleExportDossier}
-              className="flex items-center gap-1.5 rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-[13px] text-zinc-300 transition hover:border-white"
+              className="h-9 rounded-lg border border-white/[0.12] bg-white/[0.04] px-3 text-[13px] text-neutral-200 hover:border-white/25 hover:text-white"
             >
               Export report
             </button>
-                      </div>
-          {caseData.ai_case_id ? (
-            <div className="text-[12px] text-neutral-500">Analysis ready</div>
-          ) : (
-            <div className="text-[12px] text-neutral-500">Analysis not linked yet</div>
-          )}
-                      </div>
-                    </div>
+          </div>
+          <div className="text-[12px] text-neutral-500">
+            {caseData.ai_case_id ? "Analysis ready" : "Analysis not linked yet"}
+          </div>
+        </div>
+      </div>
 
       <CaseChatDrawer
         aiCaseId={caseData?.ai_case_id ?? ""}
@@ -655,104 +531,6 @@ export default function CaseWorkspace() {
         </div>
       )}
 
-      {/* AI Pipeline Live Status Bar */}
-      {jobStatus !== "idle" && (
-        <div className="mb-8 p-4 border border-orange-500/30 bg-orange-500/3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-            <span className={`h-2.5 w-2.5 rounded-full ${
-              jobStatus === "completed" ? "bg-emerald-400" : jobStatus === "failed" ? "bg-red-500" : "bg-orange-400 animate-ping"
-            }`} />
-                    <div>
-              <div className="text-[14px] font-medium text-white">
-                {jobStatus === "queued" && "In the queue"}
-                {jobStatus === "processing" && "Processing file"}
-                {jobStatus === "completed" && "Processing complete"}
-                {jobStatus === "failed" && "Processing failed"}
-              </div>
-              <div className="mt-0.5 text-[13px] text-neutral-400">
-                {jobStatus === "queued" && "Your FIR is waiting to be processed."}
-                {jobStatus === "processing" && "Reading the document and pulling out people, events, and links."}
-                {jobStatus === "completed" && "People and connections are ready to review."}
-                {jobStatus === "failed" && "Something went wrong. Try uploading again."}
-                    </div>
-                  </div>
-                  </div>
-          {jobId && <span className="font-mono text-[11px] text-neutral-500">Job {jobId.slice(0, 8)}</span>}
-                </div>
-      )}
-
-      {/* Ingestion Cards */}
-      <div className="mb-10">
-        <div className="text-[14px] font-medium text-neutral-200">Add files to this case</div>
-        <div className="mb-5 mt-1 text-[13px] text-neutral-500">Upload reports, records, photos, or notes.</div>
-
-        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="border border-white/10 bg-white/1 p-6 text-center hover:border-orange-500/40">
-            <div className="text-[14px] font-medium text-white">Documents / FIR</div>
-            <div className="mt-1 text-[12px] text-neutral-500">PDF only</div>
-            <button
-              disabled={submitting}
-              onClick={() => docInputRef.current?.click()}
-              className="mt-4 text-[13px] font-medium text-orange-400 hover:underline disabled:opacity-50"
-            >
-              Upload and process
-            </button>
-                </div>
-
-          <div className="border border-white/10 bg-white/1 p-6 text-center hover:border-orange-500/40">
-            <div className="text-[14px] font-medium text-white">Spreadsheet</div>
-            <div className="mt-1 text-[12px] text-neutral-500">CDR, bank statements</div>
-                  <button
-              disabled={submitting}
-              onClick={() => csvInputRef.current?.click()}
-              className="mt-4 text-[13px] font-medium text-orange-400 hover:underline disabled:opacity-50"
-                  >
-              Upload spreadsheet
-                  </button>
-                </div>
-
-          <div className="border border-white/10 bg-white/1 p-6 text-center hover:border-orange-500/40">
-            <div className="text-[14px] font-medium text-white">Photos</div>
-            <div className="mt-1 text-[12px] text-neutral-500">CCTV, scene, vehicles</div>
-                    <button
-              disabled={submitting}
-              onClick={() => imgInputRef.current?.click()}
-              className="mt-4 text-[13px] font-medium text-orange-400 hover:underline disabled:opacity-50"
-            >
-              Upload photo
-            </button>
-                        </div>
-                      </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[13px] font-medium text-zinc-200">Interview notes</span>
-              <button
-                onClick={handleNotesSubmit}
-                disabled={isSubmittingNotes}
-                className="rounded bg-orange-600 px-2.5 py-1 text-[12px] font-medium text-white hover:bg-orange-500 disabled:opacity-50"
-              >
-                {isSubmittingNotes ? "Adding…" : "Add to case"}
-              </button>
-                      </div>
-            <textarea
-              value={notesText}
-              onChange={(e) => setNotesText(e.target.value)}
-              placeholder="Paste interview notes, statements, or tips…"
-              className="h-20 w-full resize-none rounded border border-zinc-800 bg-zinc-900 p-2 text-[13px] text-zinc-200 outline-none focus:border-orange-500"
-            />
-          </div>
-          <div className="border border-white/10 bg-white/1 p-5">
-            <div className="text-[14px] font-medium text-white">Web link</div>
-            <div className="mb-3 text-[12px] text-neutral-500">Add a public record or open-source link</div>
-            <button onClick={() => setModalType("URL")} className="w-full text-left text-xs text-neutral-500 border border-white/10 p-3 bg-black">
-              https://...
-                    </button>
-                </div>
-                        </div>
-                      </div>
-
       <div className="mb-3 flex justify-end">
                       <button
           onClick={() => setIsTimelineOpen(true)}
@@ -800,7 +578,7 @@ export default function CaseWorkspace() {
         ].map((t) => (
                       <button
             key={t.key}
-            onClick={() => setActiveTab(t.key as ActiveTab)}
+            onClick={() => selectTab(t.key as ActiveTab)}
             className={`pb-3 border-b-2 transition-all whitespace-nowrap ${
               activeTab === t.key ? "border-orange-500 text-orange-400" : "border-transparent text-neutral-500 hover:text-neutral-300"
             }`}
@@ -812,10 +590,16 @@ export default function CaseWorkspace() {
 
       {/* Tab 1: Sources */}
       {activeTab === "sources" && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {(!caseData.sources || caseData.sources.length === 0) ? (
-            <div className="col-span-3 rounded-lg border border-white/5 p-8 text-center text-[13px] text-neutral-500">
-              No files have been added to this case yet.
+            <div className="col-span-full rounded-lg border border-white/5 p-8 text-center">
+              <p className="text-[13px] text-neutral-500">No files have been added to this case yet.</p>
+              <button
+                onClick={() => router.push(`/cases/${caseData.case_code}/add`)}
+                className="mt-3 text-[13px] font-medium text-orange-400 hover:underline"
+              >
+                Add files
+              </button>
             </div>
           ) : (
             caseData.sources.map((s: SourceData, i: number) => (
@@ -1055,175 +839,8 @@ export default function CaseWorkspace() {
         </div>
       )}
 
-      {/* Tab 6: Network Graph */}
       {activeTab === "graph" && (
-        <div className="border border-zinc-800 bg-zinc-950 p-6 rounded space-y-6">
-          <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
-        <div>
-              <h3 className="text-[14px] font-medium text-white">
-                Network map
-              </h3>
-              <p className="mt-0.5 text-[13px] text-zinc-500">
-                People and connections found in this case
-              </p>
-            </div>
-            <span className="rounded border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-[12px] text-neutral-400">
-              {graphNodes.length} people · {graphEdges.length} links
-            </span>
-          </div>
-
-          {loadingGraph ? (
-            <div className="p-12 text-center text-xs text-neutral-500">
-              Building the network map…
-        </div>
-          ) : graphNodes.length === 0 ? (
-            <div className="p-12 text-center text-xs text-neutral-500 border border-dashed border-zinc-800 rounded">
-              No network to show yet. Run analysis first.
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Circular SVG Visual Canvas */}
-              <div className="border border-zinc-850 bg-black/60 rounded-lg p-4 overflow-x-auto">
-                <svg viewBox="0 0 820 440" className="w-full min-w-190 h-100 select-none">
-                  <defs>
-                    <marker
-                      id="arrow-investigator"
-                      viewBox="0 0 10 10"
-                      refX="24"
-                      refY="5"
-                      markerWidth="6"
-                      markerHeight="6"
-                      orient="auto-start-reverse"
-                    >
-                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ea580c" />
-                    </marker>
-                  </defs>
-
-                  {(() => {
-                    const width = 820;
-                    const height = 440;
-                    const centerX = width / 2;
-                    const centerY = height / 2;
-                    const radius = 160;
-
-                    const coords: Record<string, { x: number; y: number }> = {};
-                    graphNodes.forEach((node, idx) => {
-                      const angle = (2 * Math.PI * idx) / graphNodes.length;
-                      coords[node.id] = {
-                        x: centerX + radius * Math.cos(angle),
-                        y: centerY + radius * Math.sin(angle),
-                      };
-                    });
-
-      return (
-                      <>
-                        {/* Connecting Lines */}
-                        {graphEdges.map((e, i) => {
-                          const fId = e.from?.id || e.source || "";
-                          const tId = e.to?.id || e.target || "";
-                          const start = coords[fId];
-                          const end = coords[tId];
-
-                          if (!start || !end) return null;
-
-                      return (
-                            <g key={`edge-${i}`}>
-                              <line
-                                x1={start.x}
-                                y1={start.y}
-                                x2={end.x}
-                                y2={end.y}
-                                stroke="#ea580c"
-                                strokeWidth="1.5"
-                                strokeDasharray="3 3"
-                                markerEnd="url(#arrow-investigator)"
-                                opacity="0.6"
-                              />
-                            </g>
-                      );
-                    })}
-
-                        {/* Nodes */}
-                        {graphNodes.map((n, i) => {
-                          const pt = coords[n.id];
-                          if (!pt) return null;
-                          const isPerson = n.type === "PERSON";
-                          const isUnknown = n.type === "UNKNOWN";
-
-                          return (
-                            <g key={`node-${i}`} className="cursor-pointer">
-                              <circle
-                                cx={pt.x}
-                                cy={pt.y}
-                                r="18"
-                                fill={isPerson ? "#7c2d12" : isUnknown ? "#581c87" : "#27272a"}
-                                stroke={isPerson ? "#ea580c" : isUnknown ? "#c084fc" : "#71717a"}
-                                strokeWidth="2"
-                              />
-                              <text
-                                x={pt.x}
-                                y={pt.y + 4}
-                                textAnchor="middle"
-                                fill="#ffffff"
-                                fontSize="9"
-                                fontWeight="bold"
-                              >
-                                {isPerson ? "👤" : isUnknown ? "🎭" : "📌"}
-                              </text>
-                              <text
-                                x={pt.x}
-                                y={pt.y + 30}
-                                textAnchor="middle"
-                                fill="#e4e4e7"
-                                fontSize="10"
-                                fontFamily="monospace"
-                              >
-                                {n.label?.slice(0, 16) || n.id.slice(0, 8)}
-                              </text>
-                            </g>
-                          );
-                        })}
-                      </>
-                    );
-                  })()}
-                </svg>
-          </div>
-
-              {/* Edge Evidence List */}
-              <div className="space-y-2">
-                <div className="mb-2 text-[12px] text-neutral-400">
-                  Connections
-        </div>
-                {graphEdges.map((e, i) => {
-                  const fId = e.from?.id || e.source || "";
-                  const tId = e.to?.id || e.target || "";
-                  const fLabel = graphNodes.find((n) => n.id === fId)?.label || fId;
-                  const tLabel = graphNodes.find((n) => n.id === tId)?.label || tId;
-
-      return (
-                    <div
-                      key={i}
-                      className="text-xs font-mono bg-zinc-950 border border-zinc-800 p-2.5 rounded flex flex-col gap-1.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-white font-bold">{fLabel}</span>
-                        <span className="rounded border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300">
-                          {humanize(e.type, "Linked to")}
-                        </span>
-                        <span className="text-white font-bold">{tLabel}</span>
-                      </div>
-                      {e.evidence && (
-                        <p className="text-[10px] text-neutral-500 italic pt-1 border-t border-zinc-900">
-                          &quot;{e.evidence}&quot;
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+        <CaseNetworkMap nodes={graphNodes} edges={graphEdges} loading={loadingGraph} accent="orange" />
       )}
 
       {isTimelineOpen && (
@@ -1248,92 +865,8 @@ export default function CaseWorkspace() {
         </div>
       )}
 
-      {/* Modals & Previews */}
-      {modalType && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleModalSubmit} className="border border-white/20 bg-[#0a0a0a] p-6 max-w-md w-full">
-            <h3 className="mb-4 text-[15px] font-medium text-white">Add {humanize(modalType)}</h3>
-            <input
-              value={sourceTitle}
-              onChange={(e) => setSourceTitle(e.target.value)}
-              placeholder="Title"
-              className="mb-3 w-full border border-white/10 bg-black p-2.5 text-[13px] text-white outline-none"
-              required
-            />
-            <textarea
-              value={sourceContent}
-              onChange={(e) => setSourceContent(e.target.value)}
-              placeholder={modalType === "URL" ? "https://..." : "Write notes…"}
-              className="mb-4 w-full border border-white/10 bg-black p-2.5 text-[13px] text-white outline-none"
-              rows={4}
-              required
-            />
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setModalType(null)} className="border border-white/10 px-4 py-2 text-[13px]">
-                Cancel
-              </button>
-              <button type="submit" disabled={submitting} className="bg-orange-600 px-4 py-2 text-[13px] font-medium text-white">
-                {submitting ? "Saving…" : "Save"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
       {previewSource && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
-          <div className="flex h-[80vh] w-full max-w-3xl flex-col border border-white/20 bg-[#0c0c0d] shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-              <div className="flex items-center gap-3">
-                <span className="bg-orange-500/10 px-2 py-0.5 text-[12px] text-orange-300">
-                  {humanize(previewSource.type)}
-                </span>
-                <h3 className="max-w-md truncate text-sm font-bold text-white">{previewSource.title}</h3>
-          </div>
-              <button onClick={() => setPreviewSource(null)} className="px-2 text-sm text-neutral-500 hover:text-white">✕</button>
-        </div>
-
-            <div className="flex-1 overflow-hidden bg-[#050505] p-6 flex items-center justify-center">
-              {previewSource.type === "IMAGE" && (
-                <div className="flex h-full w-full items-center justify-center">
-                  <Image
-                    src={previewSource.content}
-                    alt={previewSource.title}
-                    width={1200}
-                    height={800}
-                    unoptimized
-                    className="max-h-full max-w-full object-contain"
-                  />
-                </div>
-              )}
-
-              {(previewSource.type === "NOTES" || previewSource.type === "URL") && (
-                <div className="h-full w-full overflow-y-auto p-4 font-mono text-xs text-neutral-300 whitespace-pre-wrap leading-relaxed">
-                  {previewSource.content}
-        </div>
-              )}
-
-              {previewSource.type !== "IMAGE" && previewSource.type !== "NOTES" && previewSource.type !== "URL" && (
-                <div className="flex flex-col items-center justify-center text-center p-8 border border-white/10 bg-white/1 rounded max-w-md">
-                  <div className="text-4xl mb-3">📁</div>
-                  <h4 className="text-sm font-bold text-white mb-2">{previewSource.title}</h4>
-                  <p className="mb-6 text-[13px] text-neutral-400">Download to review the full file.</p>
-                  {previewSource.content.startsWith("data:") ? (
-                    <a
-                      href={previewSource.content}
-                      download={previewSource.title}
-                      className="bg-orange-600 px-6 py-3 text-[13px] font-medium text-white transition-colors hover:bg-orange-500"
-                    >
-                      Download file
-                    </a>
-                  ) : (
-                    <span className="text-xs text-red-400">Invalid file data.</span>
-          )}
-        </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <SourcePreviewModal source={previewSource} onClose={() => setPreviewSource(null)} />
       )}
       </div>
 

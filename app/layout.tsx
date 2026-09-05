@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { Anton } from "next/font/google";
-import ChatbotWidget from "@/components/ChatbotWidget";
+import AuthenticatedChatbot from "@/components/AuthenticatedChatbot";
 
 export const anton = Anton({
   subsets: ["latin"],
@@ -22,7 +22,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body className="min-h-full flex flex-col">
         {children}
-        <ChatbotWidget />
+        <AuthenticatedChatbot />
       </body>
     </html>
   );

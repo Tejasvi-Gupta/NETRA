@@ -1,140 +1,165 @@
 "use client";
 
-import { useMemo } from "react";
-import { useParams, usePathname, useRouter } from "next/navigation";
-import { CASE_SECTIONS, isCaseSection, setCaseSection } from "@/lib/caseSection";
+import { useEffect, useState } from "react";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import { formatInvestigator } from "@/lib/auth";
 
-type NavItem = {
-  id: string;
-  label: string;
-  href: (caseCode: string, analysisPath: string) => string;
-  match: "exact" | "prefix" | "hash";
-};
+const CASE_TABS = [
+  { id: "sources", label: "Evidence" },
+  { id: "persons", label: "People" },
+  { id: "unknowns", label: "Unknown identities" },
+  { id: "incidents", label: "Incidents" },
+  { id: "relations", label: "Relationships" },
+  { id: "graph", label: "Network" },
+] as const;
 
-const MODULE_ITEMS: NavItem[] = [
-  {
-    id: "entities",
-    label: "Entities",
-    href: (caseCode) => `/cases/${caseCode}`,
-    match: "exact",
-  },
-  {
-    id: "network",
-    label: "Network",
-    href: (caseCode) => `/cases/${caseCode}/network`,
-    match: "prefix",
-  },
-];
+interface CaseDetails {
+  case_code?: string;
+  title?: string;
+  case_type?: string;
+  priority?: string;
+  status?: string;
+  assigned_investigator?: string;
+}
 
-const ENTITY_ITEMS: NavItem[] = CASE_SECTIONS.map((section) => ({
-  id: section.id,
-  label: section.label,
-  href: (_caseCode, analysisPath) => `${analysisPath}#${section.id}`,
-  match: "hash" as const,
-}));
-
-function analysisPathFor(pathname: string, caseCode: string) {
-  if (pathname.startsWith(`/cases/${caseCode}/entities`)) {
-    return `/cases/${caseCode}/entities`;
-  }
-  return `/cases/${caseCode}`;
+function humanize(value?: string | null, fallback = "—") {
+  if (!value) return fallback;
+  return value.replace(/[_-]+/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export default function CaseSidebar() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { caseCode } = useParams<{ caseCode: string }>();
+  const [workspaceHref, setWorkspaceHref] = useState("/investigator/dashboard");
+  const [open, setOpen] = useState(false);
+  const [details, setDetails] = useState<CaseDetails | null>(null);
 
-  const analysisPath = analysisPathFor(pathname, caseCode);
-  const onAnalysisPage =
-    pathname === `/cases/${caseCode}` || pathname === `/cases/${caseCode}/entities`;
+  useEffect(() => {
+    const role = localStorage.getItem("netra_role");
+    setWorkspaceHref(role === "admin" ? "/admin/dashboard" : "/investigator/dashboard");
+  }, []);
 
-  const activeHash = useMemo(() => {
-    if (!onAnalysisPage || typeof window === "undefined") {
-      return "";
+  useEffect(() => {
+    if (!caseCode) return;
+    let cancelled = false;
+
+    async function loadCase() {
+      try {
+        const res = await fetch(`/api/cases/${caseCode}`);
+        const data = await res.json();
+        if (!cancelled && data.success && data.case) {
+          setDetails(data.case);
+        }
+      } catch {
+        if (!cancelled) setDetails(null);
+      }
     }
 
-    const hash = window.location.hash.replace("#", "");
-    return isCaseSection(hash) ? hash : "";
-  }, [onAnalysisPage]);
+    void loadCase();
+    return () => {
+      cancelled = true;
+    };
+  }, [caseCode]);
 
-  function goTo(item: NavItem) {
-    const href = item.href(caseCode, analysisPath);
-    const [path, hash] = href.split("#");
+  const caseHome = `/cases/${caseCode}`;
+  const addFilesHref = `${caseHome}/add`;
+  const onCaseHome = pathname === caseHome;
+  const onAddFiles = pathname === addFilesHref;
+  const activeTab = searchParams.get("tab") || "sources";
 
-    if (item.match === "hash" && pathname === path && hash && isCaseSection(hash)) {
-      setCaseSection(hash);
-      return;
-    }
-
-    if (item.match === "exact" && onAnalysisPage) {
-      setCaseSection("");
-      return;
-    }
-
-    router.push(href);
-  }
-
-  function isActive(item: NavItem) {
-    if (item.match === "prefix") {
-      return pathname.startsWith(item.href(caseCode, analysisPath));
-    }
-    if (item.match === "exact") {
-      return onAnalysisPage;
-    }
-    const currentSection = activeHash || (onAnalysisPage ? "ai-insight" : "");
-    return onAnalysisPage && currentSection === item.id;
-  }
-
-  function renderItems(items: NavItem[]) {
-    return items.map((item) => {
-      const active = isActive(item);
-      return (
-        <button
-          key={item.id}
-          onClick={() => goTo(item)}
-          className={`whitespace-nowrap rounded-sm border px-3 py-2.5 text-left text-[11px] tracking-[0.12em] transition-colors lg:w-full ${
-            active
-              ? "border-red-500/40 bg-red-500/10 text-red-300"
-              : "border-neutral-800 bg-transparent text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
-          }`}
-        >
-          {item.label.toUpperCase()}
-        </button>
-      );
-    });
+  function goToTab(tabId: string) {
+    const next = tabId === "sources" ? caseHome : `${caseHome}?tab=${tabId}`;
+    router.push(next);
   }
 
   return (
-    <aside className="shrink-0 border-b border-neutral-800 bg-[#0a0a0a] lg:sticky lg:top-0 lg:h-screen lg:w-[228px] lg:border-b-0 lg:border-r">
-      <div className="flex h-full flex-col px-4 pt-12 pb-5 lg:px-5">
-        <div className="flex flex-wrap items-center gap-x-2 text-[10px] tracking-[0.16em] text-neutral-500">
-          <button onClick={() => router.push("/dashboard")} className="hover:text-red-400">
+    <div
+      className={`fixed inset-y-0 left-0 z-40 ${open ? "w-[260px]" : "w-3"}`}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <div
+        className={`h-full w-[260px] overflow-hidden border-r border-white/10 bg-[#050505]/95 backdrop-blur-md transition-transform duration-300 ease-out ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <aside className="flex h-full flex-col px-4 py-8 lg:px-5">
+          <button
+            onClick={() => router.push(workspaceHref)}
+            className="text-left text-[13px] text-neutral-400 hover:text-white"
+          >
             ← Intelligence Workspace
           </button>
-          <span className="text-neutral-700">/</span>
-          <button onClick={() => router.push("/cases")} className="hover:text-red-400">
-            ALL CASES
-          </button>
-        </div>
 
-        <div className="mt-10 hidden lg:block">
-          <div className="text-[9px] tracking-[0.22em] text-neutral-600">CASE</div>
-          <div className="mt-2 truncate font-mono text-[12px] text-red-400">{caseCode}</div>
-        </div>
-
-        <nav className="mt-10 flex min-h-0 flex-1 flex-col gap-9 overflow-x-auto lg:overflow-y-auto lg:overflow-x-visible" aria-label="Case navigation">
-          <div>
-            <div className="text-[9px] tracking-[0.22em] text-neutral-600">CASE MODULES</div>
-            <div className="mt-4 flex gap-2.5 lg:flex-col">{renderItems(MODULE_ITEMS)}</div>
+          <div className="mt-6 border-b border-white/10 pb-5">
+            <div className="text-[12px] text-neutral-500">Case</div>
+            <div className="mt-1 truncate text-[14px] font-medium text-red-400">
+              {details?.case_code || caseCode}
+            </div>
+            {details?.title && (
+              <div className="mt-1 line-clamp-2 text-[13px] leading-5 text-neutral-200">
+                {details.title}
+              </div>
+            )}
           </div>
 
-          <div className={onAnalysisPage ? "" : "opacity-60"}>
-            <div className="text-[9px] tracking-[0.22em] text-neutral-600">ON THIS ENTITY</div>
-            <div className="mt-4 flex gap-2.5 lg:flex-col">{renderItems(ENTITY_ITEMS)}</div>
+          <nav className="mt-5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto" aria-label="Case sections">
+            {CASE_TABS.map((item) => {
+              const active = onCaseHome && activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => goToTab(item.id)}
+                  className={`whitespace-nowrap rounded-lg border px-3 py-2.5 text-left text-[13px] transition-colors ${
+                    active
+                      ? "border-red-500/40 bg-red-500/10 text-red-200"
+                      : "border-transparent text-neutral-400 hover:border-white/10 hover:text-neutral-200"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => router.push(addFilesHref)}
+              className={`mt-3 whitespace-nowrap rounded-lg border px-3 py-2.5 text-left text-[13px] transition-colors ${
+                onAddFiles
+                  ? "border-orange-500/40 bg-orange-500/10 text-orange-200"
+                  : "border-transparent text-neutral-400 hover:border-white/10 hover:text-neutral-200"
+              }`}
+            >
+              Add files
+            </button>
+          </nav>
+
+          <div className="mt-6 space-y-4 border-t border-white/10 pt-6">
+            <div>
+              <div className="text-[12px] text-neutral-500">Investigator</div>
+              <div className="mt-1 text-[13px] leading-5 text-white">
+                {formatInvestigator(details?.assigned_investigator)}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-[12px] text-neutral-500">Status</div>
+                <div className="mt-1 text-[13px] text-neutral-200">{humanize(details?.status)}</div>
+              </div>
+              <div>
+                <div className="text-[12px] text-neutral-500">Priority</div>
+                <div className="mt-1 text-[13px] text-neutral-200">{humanize(details?.priority)}</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[12px] text-neutral-500">Type</div>
+              <div className="mt-1 text-[13px] text-neutral-200">{humanize(details?.case_type)}</div>
+            </div>
           </div>
-        </nav>
+        </aside>
       </div>
-    </aside>
+    </div>
   );
 }

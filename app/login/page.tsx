@@ -32,6 +32,10 @@ export default function LoginPage() {
   function handleLogin(roleKey: string) {
     setLoadingRole(roleKey);
     localStorage.setItem("netra_role", roleKey);
+    localStorage.setItem(
+      "netra_display_name",
+      roleKey === "admin" ? "Administrator" : "Field Investigator"
+    );
     setTimeout(() => {
       router.push(roleKey === "admin" ? "/admin/dashboard" : "/investigator/dashboard");
     }, 650);

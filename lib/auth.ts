@@ -8,6 +8,9 @@ export const ADMIN_ACCESS_KEY = "netra@2026";
 
 export const INVESTIGATOR_OPERATOR_ID = "netra-investigator";
 export const INVESTIGATOR_ACCESS_KEY = "investigator@2026";
+export const DISPLAY_NAME_KEY = "netra_display_name";
+export const INVESTIGATOR_DISPLAY_NAME = "Field Investigator";
+export const ADMIN_DISPLAY_NAME = "Administrator";
 
 export type UserRole = "admin" | "investigator";
 
@@ -51,6 +54,20 @@ export function logout() {
   localStorage.removeItem(OPERATOR_KEY);
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(ROLE_KEY);
+  localStorage.removeItem(DISPLAY_NAME_KEY);
+}
+
+export function getDisplayName() {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(DISPLAY_NAME_KEY) ?? "";
+}
+
+export function formatInvestigator(name?: string | null) {
+  const stored = name?.trim() || "";
+  if (/^(lead investigator|netra investigator)$/i.test(stored)) {
+    return INVESTIGATOR_DISPLAY_NAME;
+  }
+  return stored || "Unassigned";
 }
 
 export function updateAccessKey(nextKey: string) {

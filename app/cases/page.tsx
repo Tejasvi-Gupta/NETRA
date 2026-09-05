@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatInvestigator } from "@/lib/auth";
 
 interface CaseItem {
   _id: string;
@@ -166,7 +167,7 @@ export default function AllCasesPage() {
                 <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 lg:mt-0 lg:contents">
                   <div className="min-w-0 text-[12px] leading-5 text-neutral-400">
                     <span className="mr-1 text-neutral-600 lg:hidden">Investigator</span>
-                    {c.assigned_investigator || "—"}
+                    {formatInvestigator(c.assigned_investigator)}
                   </div>
                   <div className={`flex items-center gap-2 text-[12px] tracking-wide ${priorityColor[c.priority]}`}>
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />

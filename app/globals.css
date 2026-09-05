@@ -48,3 +48,62 @@ body {
   background: #52525b;
 }
 
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background-color: #111111;
+  color: #f5f5f5;
+}
+
+.network-node-core {
+  transition: r 200ms ease, stroke-width 200ms ease;
+}
+
+.network-pulse {
+  transform-origin: center;
+  animation: network-pulse 2.4s ease-out infinite;
+}
+
+.network-orbit {
+  animation: network-orbit 18s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.network-edge-flow {
+  animation: network-edge-flow 2.8s linear infinite;
+}
+
+@keyframes network-pulse {
+  0% {
+    opacity: 0.45;
+  }
+  70% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes network-orbit {
+  to {
+    stroke-dashoffset: -80;
+  }
+}
+
+@keyframes network-edge-flow {
+  to {
+    stroke-dashoffset: -48;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .network-map * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+

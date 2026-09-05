@@ -6,7 +6,10 @@ import { useRouter } from "next/navigation";
 type Priority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 const fieldClass =
-  "mt-2 w-full rounded-lg border border-white/15 bg-[#111] px-3.5 py-3 text-[14px] text-white outline-none placeholder:text-neutral-500 focus:border-red-400/60";
+  "mt-2 w-full rounded-lg border border-white/[0.12] bg-white/[0.04] px-3.5 py-3 text-[14px] text-neutral-100 outline-none placeholder:text-neutral-500 transition-colors focus:border-white/25 focus:bg-white/[0.07]";
+
+const selectClass = `${fieldClass} [color-scheme:dark]`;
+const optionClass = "bg-[#111111] text-neutral-100";
 
 export default function NewCasePage() {
   const router = useRouter();
@@ -36,6 +39,8 @@ export default function NewCasePage() {
           case_type: caseType,
           priority,
           investigation_summary: summary.trim(),
+          assigned_investigator:
+            localStorage.getItem("netra_display_name") || "Field Investigator",
         }),
       });
 
@@ -44,7 +49,8 @@ export default function NewCasePage() {
         throw new Error(data.error || "Could not create the case.");
       }
 
-      router.push("/admin/dashboard");
+      const createdCode = data.case?.case_code;
+      router.push(createdCode ? `/cases/${createdCode}` : "/investigator/dashboard");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -53,8 +59,20 @@ export default function NewCasePage() {
   }
 
   return (
-    <div className="min-h-screen px-6 py-10">
-      <div className="mx-auto max-w-[640px]">
+    <div className="relative min-h-screen overflow-x-hidden bg-[#050505] font-mono text-neutral-200">
+      <div
+        className="pointer-events-none fixed inset-0 opacity-[0.05]"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(239,68,68,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(239,68,68,0.5) 1px, transparent 1px)",
+          backgroundSize: "44px 44px",
+          maskImage: "radial-gradient(ellipse 90% 90% at 50% 0%, black 20%, transparent 75%)",
+        }}
+      />
+      <div className="pointer-events-none fixed -left-40 -top-40 h-[600px] w-[600px] rounded-full bg-red-600/10 blur-[130px]" />
+      <div className="pointer-events-none fixed -bottom-40 right-0 h-[500px] w-[500px] rounded-full bg-orange-600/10 blur-[130px]" />
+
+      <div className="relative z-10 mx-auto max-w-[640px] px-4 py-8 sm:px-8 sm:py-10">
         <button
           onClick={() => router.back()}
           className="text-[13px] text-neutral-400 transition-colors hover:text-white"
@@ -62,10 +80,10 @@ export default function NewCasePage() {
           ← Cancel
         </button>
 
-        <div className="mt-6 rounded-xl border border-white/10 bg-[#0d0d0d] p-8">
-          <p className="text-[13px] text-neutral-400">New investigation</p>
+        <div className="mt-6 rounded-lg border border-white/10 bg-white/[0.03] p-8">
+          <p className="text-[13px] text-neutral-500">New investigation</p>
           <h1 className="mt-1 text-[28px] font-semibold tracking-tight text-white">Create case</h1>
-          <p className="mt-2 text-[14px] leading-6 text-neutral-400">
+          <p className="mt-2 text-[13px] leading-6 text-neutral-500">
             Add the basic details. You can upload sources and run analysis after the case is created.
           </p>
 
@@ -100,12 +118,12 @@ export default function NewCasePage() {
                   id="case-type"
                   value={caseType}
                   onChange={(e) => setCaseType(e.target.value)}
-                  className={fieldClass}
+                  className={selectClass}
                 >
-                  <option value="Narcotics">Narcotics</option>
-                  <option value="Financial Fraud">Financial fraud</option>
-                  <option value="Cyber Syndicate">Cyber crime</option>
-                  <option value="Organized Crime">Organized crime</option>
+                  <option className={optionClass} value="Narcotics">Narcotics</option>
+                  <option className={optionClass} value="Financial Fraud">Financial fraud</option>
+                  <option className={optionClass} value="Cyber Syndicate">Cyber crime</option>
+                  <option className={optionClass} value="Organized Crime">Organized crime</option>
                 </select>
               </div>
 
@@ -117,12 +135,12 @@ export default function NewCasePage() {
                   id="case-priority"
                   value={priority}
                   onChange={(e) => setPriority(e.target.value as Priority)}
-                  className={fieldClass}
+                  className={selectClass}
                 >
-                  <option value="LOW">Low</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="HIGH">High</option>
-                  <option value="CRITICAL">Critical</option>
+                  <option className={optionClass} value="LOW">Low</option>
+                  <option className={optionClass} value="MEDIUM">Medium</option>
+                  <option className={optionClass} value="HIGH">High</option>
+                  <option className={optionClass} value="CRITICAL">Critical</option>
                 </select>
               </div>
             </div>
@@ -153,7 +171,7 @@ export default function NewCasePage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="rounded-lg bg-red-600 px-5 py-2.5 text-[14px] font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                className="h-10 rounded-lg border border-red-500/35 bg-red-500/[0.12] px-5 text-[13px] font-medium text-red-200 transition-colors hover:border-red-400/60 hover:bg-red-500/20 hover:text-white disabled:opacity-50"
               >
                 {submitting ? "Creating case…" : "Create case"}
               </button>
