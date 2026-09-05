@@ -152,7 +152,7 @@ export default function AdminCaseView() {
     const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
     if (!code) return;
     const found = await loadWorkspaceCase(code);
-    setCaseData(found);
+    setCaseData(found as CaseData | null);
   }, [caseCode]);
 
   const linkAiCase = async () => {

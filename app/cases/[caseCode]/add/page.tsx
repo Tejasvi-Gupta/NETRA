@@ -42,10 +42,10 @@ export default function AddFilesPage() {
     if (!code) return;
     const found = await loadWorkspaceCase(code);
     if (!found) return;
-    setCaseData(found);
+    setCaseData(found as CaseData);
     if (jobId) return;
-    const jobs = found.ingestion_jobs || [];
-    const active = jobs.find((job) => {
+    const jobs: FirIngestionJob[] = found.ingestion_jobs || [];
+    const active = jobs.find((job: FirIngestionJob) => {
       const status = jobStatusLabel(job.status);
       return status !== "completed" && status !== "failed";
     }) || jobs[0];

@@ -159,12 +159,22 @@ export function jobStatusLabel(status?: string) {
   return "processing";
 }
 
-export async function loadWorkspaceCase(caseCode: string) {
+export interface WorkspaceCase {
+  case_code: string;
+  title: string;
+  ai_case_id?: string;
+  ai_extracted_data?: Record<string, unknown> | null;
+  documents?: FirDocument[];
+  ingestion_jobs?: FirIngestionJob[];
+  [key: string]: unknown;
+}
+
+export async function loadWorkspaceCase(caseCode: string): Promise<WorkspaceCase | null> {
   const localRes = await fetch(`/api/cases/${caseCode}`);
   const localData = await localRes.json();
   if (!localData.success || !localData.case) return null;
 
-  const found = localData.case;
+  const found = localData.case as WorkspaceCase;
   if (!found.ai_case_id) return found;
 
   try {

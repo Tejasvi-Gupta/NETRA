@@ -239,7 +239,7 @@ function CaseWorkspace() {
     if (!code) return;
     const found = await loadWorkspaceCase(code);
     setNexusMatches([]);
-    setCaseData(found);
+    setCaseData(found as CaseData | null);
   }, [caseCode]);
 
   const linkAiCase = async () => {
