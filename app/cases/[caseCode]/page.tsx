@@ -7,7 +7,13 @@ import CaseTimelineView from "@/components/CaseTimelineView";
 import ForensicDossierPrint from "@/components/ForensicDossierPrint";
 import SourcePreviewModal from "@/components/SourcePreviewModal";
 import CaseNetworkMap from "@/components/CaseNetworkMap";
+import CaseAnalysisCard from "@/components/CaseAnalysisCard";
+import CaseSummaryStrip from "@/components/CaseSummaryStrip";
+import { LiveIngestionJob } from "@/components/IngestionPipeline";
 import { formatInvestigator } from "@/lib/auth";
+import { jobStatusLabel, loadWorkspaceCase } from "@/lib/workspaceCase";
+import type { FirDocument, FirIngestionJob } from "@/lib/workspaceCase";
+import type { CaseSummary, InvestigationAnalysis } from "@/lib/aiApi";
 
 interface SourceData {
   type: string;
@@ -61,11 +67,23 @@ interface RelationRecord {
   source_type?: string;
 }
 
+interface EntityRecord {
+  id?: string;
+  entity_id?: string;
+  type?: string;
+  label?: string;
+  name?: string;
+  value?: string;
+  normalized_value?: string;
+  text?: string;
+}
+
 interface AiExtractedData {
   persons?: PersonRecord[];
   unknown_identities?: UnknownIdentityRecord[];
   incidents?: IncidentRecord[];
   relationships?: RelationRecord[];
+  entities?: EntityRecord[];
 }
 
 interface CaseData {
@@ -78,6 +96,8 @@ interface CaseData {
   sources?: SourceData[];
   ai_case_id?: string;
   ai_extracted_data?: AiExtractedData;
+  documents?: FirDocument[];
+  ingestion_jobs?: FirIngestionJob[];
 }
 
 interface GraphNode {
@@ -103,11 +123,7 @@ interface GraphData {
   relationships?: GraphEdge[];
 }
 
-interface AnalysisResult {
-  summary?: string;
-  key_findings?: string[];
-  [key: string]: unknown;
-}
+type AnalysisResult = InvestigationAnalysis;
 
 interface NexusMatch {
   suspectName: string;
@@ -116,7 +132,7 @@ interface NexusMatch {
   matchType: string;
 }
 
-type ActiveTab = "sources" | "persons" | "unknowns" | "incidents" | "relations" | "graph";
+type ActiveTab = "sources" | "persons" | "unknowns" | "incidents" | "entities" | "relations" | "graph";
 
 function humanize(value?: string | null, fallback = "") {
   if (!value) return fallback;
@@ -124,7 +140,7 @@ function humanize(value?: string | null, fallback = "") {
 }
 
 function isActiveTab(value: string | null): value is ActiveTab {
-  return value === "sources" || value === "persons" || value === "unknowns" || value === "incidents" || value === "relations" || value === "graph";
+  return value === "sources" || value === "persons" || value === "unknowns" || value === "incidents" || value === "entities" || value === "relations" || value === "graph";
 }
 
 export default function CaseWorkspacePage() {
@@ -148,6 +164,7 @@ function CaseWorkspace() {
   // Analysis & Graph States
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [caseSummary, setCaseSummary] = useState<CaseSummary | null>(null);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
@@ -159,6 +176,8 @@ function CaseWorkspace() {
   const [relType, setRelType] = useState("COLLABORATOR");
   const [relEvidence, setRelEvidence] = useState("");
   const [relSubmitting, setRelSubmitting] = useState(false);
+  const [linkingAi, setLinkingAi] = useState(false);
+  const [closingCase, setClosingCase] = useState(false);
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -216,37 +235,39 @@ function CaseWorkspace() {
   };
 
   const fetchCase = useCallback(async () => {
-    const res = await fetch("/api/cases");
-    const data = await res.json();
-    if (data.success) {
-      const found = data.cases.find((c: CaseData) => c.case_code === caseCode);
-      setNexusMatches([]);
-      setCaseData(found);
-    }
+    const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
+    if (!code) return;
+    const found = await loadWorkspaceCase(code);
+    setNexusMatches([]);
+    setCaseData(found);
   }, [caseCode]);
+
+  const linkAiCase = async () => {
+    const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
+    if (!code || linkingAi) return;
+    setLinkingAi(true);
+    try {
+      const res = await fetch("/api/ai/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ case_code: code }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Could not link this case to the FIR API.");
+        return;
+      }
+      await fetchCase();
+    } finally {
+      setLinkingAi(false);
+    }
+  };
 
   useEffect(() => {
     void (async () => {
       await fetchCase();
     })();
   }, [fetchCase]);
-
-  // Sync with AI Backend
-  const syncAiData = useCallback(async (aiCaseId: string) => {
-    try {
-      await fetch("/api/ai/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          case_code: caseCode,
-          ai_case_id: aiCaseId,
-        }),
-      });
-      await fetchCase();
-    } catch (err) {
-      console.error("Sync error:", err);
-    }
-  }, [caseCode, fetchCase]);
 
   // Load graph data for the workspace and printable dossier
   useEffect(() => {
@@ -270,7 +291,41 @@ function CaseWorkspace() {
     fetchGraph();
   }, [activeTab, caseData?.ai_case_id]);
 
-  // Handle Run Analysis Action
+  useEffect(() => {
+    if (!caseData?.ai_case_id) return;
+
+    async function loadSavedAnalysis() {
+      try {
+        const res = await fetch(`/api/ai/analysis?case_id=${caseData?.ai_case_id}`);
+        const data = await res.json();
+        if (res.ok && data.success) setAnalysisResult(data);
+      } catch (error) {
+        console.error("Failed to load saved analysis:", error);
+      }
+    }
+
+    void loadSavedAnalysis();
+  }, [caseData?.ai_case_id]);
+
+  useEffect(() => {
+    if (!caseData?.ai_case_id) {
+      setCaseSummary(null);
+      return;
+    }
+
+    async function loadSummary() {
+      try {
+        const res = await fetch(`/api/ai/summary?case_id=${caseData?.ai_case_id}`);
+        const data = await res.json();
+        if (res.ok && data.success) setCaseSummary(data.summary);
+      } catch (error) {
+        console.error("Failed to load FIR case summary:", error);
+      }
+    }
+
+    void loadSummary();
+  }, [caseData?.ai_case_id, analysisResult?.case_id]);
+
   const handleRunAnalysis = async () => {
     if (!caseData?.ai_case_id) {
       alert("This case is not linked to analysis yet.");
@@ -284,7 +339,7 @@ function CaseWorkspace() {
         body: JSON.stringify({ case_id: caseData.ai_case_id }),
       });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.success !== false) {
         setAnalysisResult(data);
         void logActivity("Triggered live graph analysis & inference engine");
         await fetchCase();
@@ -298,11 +353,41 @@ function CaseWorkspace() {
     }
   };
 
+  const handleCloseCase = async () => {
+    const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
+    if (!code || closingCase) return;
+    if (!window.confirm("Close this case on the FIR API and mark it closed in NETRA?")) return;
+
+    setClosingCase(true);
+    try {
+      const res = await fetch("/api/ai/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ case_code: code }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Could not close this case.");
+        return;
+      }
+      void logActivity("Closed the case");
+      await fetchCase();
+      if (caseData?.ai_case_id) {
+        const summaryRes = await fetch(`/api/ai/summary?case_id=${caseData.ai_case_id}`);
+        const summaryData = await summaryRes.json();
+        if (summaryRes.ok && summaryData.success) setCaseSummary(summaryData.summary);
+      }
+    } finally {
+      setClosingCase(false);
+    }
+  };
+
   const aiData = caseData?.ai_extracted_data || {};
   const personsList = useMemo(() => aiData.persons || [], [aiData.persons]);
   const unknownsList = aiData.unknown_identities || [];
   const incidentsList = aiData.incidents || [];
   const relationsList = aiData.relationships || [];
+  const entitiesList = aiData.entities || [];
 
   useEffect(() => {
     const currentCaseCode = caseData?.case_code;
@@ -341,6 +426,11 @@ function CaseWorkspace() {
   }, [caseData?.case_code, personsList]);
 
   if (!caseData) return <div className="p-8 text-[14px] text-neutral-500">Loading case…</div>;
+
+  const activeJob = (caseData.ingestion_jobs || []).find((job) => {
+    const status = jobStatusLabel(job.status);
+    return status !== "completed" && status !== "failed";
+  });
 
   const getEntityName = (id: string) => {
     const found = personsList.find(
@@ -456,13 +546,35 @@ function CaseWorkspace() {
             </button>
             <button
               onClick={handleRunAnalysis}
-              disabled={analyzing || !caseData.ai_case_id}
+              disabled={analyzing || !caseData.ai_case_id || caseData.status === "CLOSED" || caseSummary?.status === "CLOSED"}
               className="h-9 rounded-lg border border-orange-600/50 bg-orange-950/40 px-3 text-[13px] font-medium text-orange-200 transition hover:border-orange-400/60 hover:text-white disabled:opacity-50"
             >
               {analyzing ? "Analyzing…" : "Run analysis"}
             </button>
+            {caseData.status !== "CLOSED" && caseSummary?.status !== "CLOSED" ? (
+              <button
+                onClick={() => void handleCloseCase()}
+                disabled={closingCase}
+                className="h-9 rounded-lg border border-white/[0.12] bg-white/[0.04] px-3 text-[13px] text-neutral-200 hover:border-white/25 hover:text-white disabled:opacity-50"
+              >
+                {closingCase ? "Closing…" : "Close case"}
+              </button>
+            ) : (
+              <span className="h-9 rounded-lg border border-white/10 px-3 py-2 text-[13px] text-neutral-500">
+                Closed
+              </span>
+            )}
+            {!caseData.ai_case_id && (
+              <button
+                onClick={linkAiCase}
+                disabled={linkingAi}
+                className="h-9 rounded-lg border border-orange-600/50 bg-orange-950/40 px-3 text-[13px] font-medium text-orange-200 disabled:opacity-50"
+              >
+                {linkingAi ? "Linking…" : "Link to FIR API"}
+              </button>
+            )}
             <button
-              onClick={() => caseData?.ai_case_id && syncAiData(caseData.ai_case_id)}
+              onClick={() => void fetchCase()}
               className="h-9 rounded-lg border border-white/[0.12] bg-white/[0.04] px-3 text-[13px] text-neutral-200 hover:border-white/25 hover:text-white"
             >
               Refresh
@@ -475,7 +587,7 @@ function CaseWorkspace() {
             </button>
           </div>
           <div className="text-[12px] text-neutral-500">
-            {caseData.ai_case_id ? "Analysis ready" : "Analysis not linked yet"}
+            {caseData.ai_case_id ? "Linked to FIR API" : "Not linked to FIR API yet"}
           </div>
         </div>
       </div>
@@ -486,49 +598,25 @@ function CaseWorkspace() {
         onClose={() => setIsChatOpen(false)}
       />
 
-      {/* AI Analysis Live Findings Result Card */}
-      {analysisResult && (
-        <div className="mb-8 rounded-lg border border-white/10 bg-white/[0.03] p-5 text-[13px] shadow-xl">
-          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-3">
-            <span className="text-[14px] font-medium text-white">
-              Analysis results
-            </span>
+      {activeJob && (
+        <div className="mb-6 rounded-lg border border-orange-500/30 bg-orange-500/[0.04] p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <span className="text-[12px] text-neutral-500">FIR processing pipeline</span>
             <button
-              onClick={() => setAnalysisResult(null)}
-              className="text-[13px] text-neutral-400 hover:text-white"
+              onClick={() => router.push(`/cases/${caseData.case_code}/add`)}
+              className="text-[13px] text-orange-300 hover:underline"
             >
-              Close
+              Add files
             </button>
           </div>
-
-          <div className="max-h-80 space-y-3 overflow-y-auto text-neutral-300">
-            {analysisResult.summary && (
-              <div>
-                <span className="text-[12px] text-neutral-500">Summary</span>
-                <p className="mt-1 leading-6 text-zinc-300">{analysisResult.summary}</p>
-              </div>
-            )}
-
-            {analysisResult.key_findings && (
-              <div>
-                <span className="text-[12px] text-neutral-500">Key findings</span>
-                <ul className="mt-1 list-disc list-inside space-y-1 text-zinc-300">
-                  {analysisResult.key_findings.map((finding: string, i: number) => (
-                    <li key={i}>{finding}</li>
-                  ))}
-                </ul>
-          </div>
-            )}
-
-            {!analysisResult.summary && (
-              <pre className="whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-300">
-                {typeof analysisResult === "string"
-                  ? analysisResult
-                  : JSON.stringify(analysisResult, null, 2)}
-              </pre>
-            )}
-          </div>
+          <LiveIngestionJob jobId={activeJob.job_id || activeJob.id} initial={activeJob} />
         </div>
+      )}
+
+      {caseSummary && <CaseSummaryStrip summary={caseSummary} />}
+
+      {analysisResult && (
+        <CaseAnalysisCard result={analysisResult} onClose={() => setAnalysisResult(null)} />
       )}
 
       <div className="mb-3 flex justify-end">
@@ -569,10 +657,11 @@ function CaseWorkspace() {
       {/* Tabs Header */}
       <div className="mb-6 flex gap-5 overflow-x-auto border-b border-white/10 text-[13px]">
         {[
-          { key: "sources", label: `Evidence (${caseData.sources?.length || 0})` },
+          { key: "sources", label: `Evidence (${(caseData.sources?.length || 0) + (caseData.documents?.length || 0)})` },
           { key: "persons", label: `People (${personsList.length})` },
           { key: "unknowns", label: `Unknown identities (${unknownsList.length})` },
           { key: "incidents", label: `Incidents (${incidentsList.length})` },
+          { key: "entities", label: `Entities (${entitiesList.length})` },
           { key: "relations", label: `Relationships (${relationsList.length})` },
           { key: "graph", label: "Network" },
         ].map((t) => (
@@ -588,25 +677,73 @@ function CaseWorkspace() {
         ))}
       </div>
 
-      {/* Tab 1: Sources */}
       {activeTab === "sources" && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {(!caseData.sources || caseData.sources.length === 0) ? (
-            <div className="col-span-full rounded-lg border border-white/5 p-8 text-center">
-              <p className="text-[13px] text-neutral-500">No files have been added to this case yet.</p>
-              <button
-                onClick={() => router.push(`/cases/${caseData.case_code}/add`)}
-                className="mt-3 text-[13px] font-medium text-orange-400 hover:underline"
-              >
-                Add files
-              </button>
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {(!caseData.sources || caseData.sources.length === 0) && (!caseData.documents || caseData.documents.length === 0) ? (
+              <div className="col-span-full rounded-lg border border-white/5 p-8 text-center">
+                <p className="text-[13px] text-neutral-500">No files have been added to this case yet.</p>
+                <button
+                  onClick={() => router.push(`/cases/${caseData.case_code}/add`)}
+                  className="mt-3 text-[13px] font-medium text-orange-400 hover:underline"
+                >
+                  Add files
+                </button>
+              </div>
+            ) : (
+              <>
+                {(caseData.sources || []).map((s: SourceData, i: number) => (
+                  <div key={`local-${i}`} onClick={() => setPreviewSource(s)} className="cursor-pointer border border-white/10 bg-white/2 p-4 hover:border-orange-500/30">
+                    <span className="bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300">{humanize(s.type)}</span>
+                    <div className="mt-2 truncate text-[14px] font-medium text-white">{s.title}</div>
+                    <div className="mt-1 text-[12px] text-neutral-500">Open</div>
+                  </div>
+                ))}
+                {(caseData.documents || []).map((doc, i) => (
+                  <div key={doc.document_id || doc.id || i} className="border border-white/10 bg-white/2 p-4">
+                    <span className="bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300">FIR document</span>
+                    <div className="mt-2 truncate text-[14px] font-medium text-white">
+                      {doc.title || doc.filename || doc.file_name || "Uploaded document"}
+                    </div>
+                    <div className="mt-1 text-[12px] text-neutral-500">
+                      {doc.status ? humanize(doc.status) : "From FIR API"}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+
+          {(caseData.ingestion_jobs?.length || 0) > 0 && (
+            <div>
+              <div className="mb-2 text-[12px] text-neutral-400">FIR processing pipeline</div>
+              <div className="space-y-4">
+                {caseData.ingestion_jobs?.map((job, i) => (
+                  <div key={job.job_id || job.id || i} className="rounded-lg border border-white/10 p-4">
+                    <LiveIngestionJob jobId={job.job_id || job.id} initial={job} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "entities" && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {entitiesList.length === 0 ? (
+            <div className="col-span-full rounded-lg border border-white/5 p-8 text-center text-[13px] text-neutral-500">
+              No entities have been extracted for this case yet.
             </div>
           ) : (
-            caseData.sources.map((s: SourceData, i: number) => (
-              <div key={i} onClick={() => setPreviewSource(s)} className="cursor-pointer border border-white/10 bg-white/2 p-4 hover:border-orange-500/30">
-                <span className="bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300">{humanize(s.type)}</span>
-                <div className="mt-2 truncate text-[14px] font-medium text-white">{s.title}</div>
-                <div className="mt-1 text-[12px] text-neutral-500">Open</div>
+            entitiesList.map((entity, i) => (
+              <div key={entity.id || entity.entity_id || i} className="border border-white/10 bg-white/2 p-4">
+                <span className="bg-orange-500/10 px-2 py-0.5 text-[11px] text-orange-300">
+                  {humanize(entity.type, "Entity")}
+                </span>
+                <div className="mt-2 text-[14px] font-medium text-white">
+                  {entity.label || entity.name || entity.value || entity.normalized_value || entity.text || "Unnamed entity"}
+                </div>
               </div>
             ))
           )}

@@ -1,30 +1,23 @@
 import { NextResponse } from "next/server";
+import { uploadFIRDocument } from "@/lib/aiApi";
 
 export async function POST(request: Request) {
   try {
-    const { ai_case_id, notes } = await request.json();
+    const formData = await request.formData();
+    const file = formData.get("file");
+    const aiCaseId = String(formData.get("ai_case_id") || "");
 
-    if (!ai_case_id || !notes) {
-      return NextResponse.json({ error: "Missing case ID or notes" }, { status: 400 });
+    if (!(file instanceof File) || !aiCaseId) {
+      return NextResponse.json({ error: "Missing file or case_id" }, { status: 400 });
     }
 
-    // Interrogation text ko file Blob bana kar documents endpoint par bhejna hai
-    const backendForm = new FormData();
-    const textBlob = new Blob([notes], { type: "text/plain" });
-    backendForm.append("file", textBlob, `interrogation_${Date.now()}.txt`);
-
-    const res = await fetch(
-      `https://fir-intelligence-api.onrender.com/api/v1/cases/${ai_case_id}/documents`,
-      {
-        method: "POST",
-        body: backendForm,
-      }
-    );
-
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    const result = await uploadFIRDocument(aiCaseId, file);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status || 502 });
+    }
+    return NextResponse.json(result.data);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "Failed to upload document";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

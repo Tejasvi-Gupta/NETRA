@@ -6,7 +6,13 @@ import CaseTimelineView from "@/components/CaseTimelineView";
 import ForensicDossierPrint from "@/components/ForensicDossierPrint";
 import SourcePreviewModal from "@/components/SourcePreviewModal";
 import CaseNetworkMap from "@/components/CaseNetworkMap";
+import CaseAnalysisCard from "@/components/CaseAnalysisCard";
+import CaseSummaryStrip from "@/components/CaseSummaryStrip";
+import { LiveIngestionJob } from "@/components/IngestionPipeline";
 import { formatInvestigator } from "@/lib/auth";
+import { jobStatusLabel, loadWorkspaceCase } from "@/lib/workspaceCase";
+import type { FirDocument, FirIngestionJob } from "@/lib/workspaceCase";
+import type { CaseSummary, InvestigationAnalysis } from "@/lib/aiApi";
 
 interface SourceData {
   type: string;
@@ -57,11 +63,23 @@ interface RelationRecord {
   evidence?: string;
 }
 
+interface EntityRecord {
+  id?: string;
+  entity_id?: string;
+  type?: string;
+  label?: string;
+  name?: string;
+  value?: string;
+  normalized_value?: string;
+  text?: string;
+}
+
 interface AiExtractedData {
   persons?: PersonRecord[];
   unknown_identities?: UnknownIdentityRecord[];
   incidents?: IncidentRecord[];
   relationships?: RelationRecord[];
+  entities?: EntityRecord[];
 }
 
 interface CaseData {
@@ -74,6 +92,8 @@ interface CaseData {
   sources?: SourceData[];
   ai_case_id?: string;
   ai_extracted_data?: AiExtractedData;
+  documents?: FirDocument[];
+  ingestion_jobs?: FirIngestionJob[];
 }
 
 interface GraphNode {
@@ -102,13 +122,9 @@ interface GraphData {
   relationships?: GraphEdge[];
 }
 
-interface AnalysisResult {
-  summary?: string;
-  key_findings?: string[];
-  [key: string]: unknown;
-}
+type AnalysisResult = InvestigationAnalysis;
 
-type ActiveTab = "sources" | "persons" | "unknowns" | "incidents" | "relations" | "graph";
+type ActiveTab = "sources" | "persons" | "unknowns" | "incidents" | "entities" | "relations" | "graph";
 
 function humanize(value?: string | null, fallback = "") {
   if (!value) return fallback;
@@ -124,19 +140,41 @@ export default function AdminCaseView() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("sources");
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [caseSummary, setCaseSummary] = useState<CaseSummary | null>(null);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+  const [linkingAi, setLinkingAi] = useState(false);
+  const [closingCase, setClosingCase] = useState(false);
 
   const fetchCase = useCallback(async () => {
-    const res = await fetch("/api/cases");
-    const data = await res.json();
-    if (data.success) {
-      const found = data.cases.find((c: CaseData) => c.case_code === caseCode);
-      setCaseData(found);
-    }
+    const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
+    if (!code) return;
+    const found = await loadWorkspaceCase(code);
+    setCaseData(found);
   }, [caseCode]);
+
+  const linkAiCase = async () => {
+    const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
+    if (!code || linkingAi) return;
+    setLinkingAi(true);
+    try {
+      const res = await fetch("/api/ai/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ case_code: code }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Could not link this case to the FIR API.");
+        return;
+      }
+      await fetchCase();
+    } finally {
+      setLinkingAi(false);
+    }
+  };
 
   useEffect(() => {
     void (async () => {
@@ -166,6 +204,41 @@ export default function AdminCaseView() {
     fetchGraph();
   }, [activeTab, caseData?.ai_case_id]);
 
+  useEffect(() => {
+    if (!caseData?.ai_case_id) return;
+
+    async function loadSavedAnalysis() {
+      try {
+        const res = await fetch(`/api/ai/analysis?case_id=${caseData?.ai_case_id}`);
+        const data = await res.json();
+        if (res.ok && data.success) setAnalysisResult(data);
+      } catch (error) {
+        console.error("Failed to load saved analysis:", error);
+      }
+    }
+
+    void loadSavedAnalysis();
+  }, [caseData?.ai_case_id]);
+
+  useEffect(() => {
+    if (!caseData?.ai_case_id) {
+      setCaseSummary(null);
+      return;
+    }
+
+    async function loadSummary() {
+      try {
+        const res = await fetch(`/api/ai/summary?case_id=${caseData?.ai_case_id}`);
+        const data = await res.json();
+        if (res.ok && data.success) setCaseSummary(data.summary);
+      } catch (error) {
+        console.error("Failed to load FIR case summary:", error);
+      }
+    }
+
+    void loadSummary();
+  }, [caseData?.ai_case_id, analysisResult?.case_id]);
+
   const handleRunAnalysis = async () => {
     if (!caseData?.ai_case_id) {
       alert("This case is not linked to analysis yet.");
@@ -179,7 +252,7 @@ export default function AdminCaseView() {
         body: JSON.stringify({ case_id: caseData.ai_case_id }),
       });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.success !== false) {
         setAnalysisResult(data);
         await fetchCase();
       } else {
@@ -192,13 +265,47 @@ export default function AdminCaseView() {
     }
   };
 
+  const handleCloseCase = async () => {
+    const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
+    if (!code || closingCase) return;
+    if (!window.confirm("Close this case on the FIR API and mark it closed in NETRA?")) return;
+
+    setClosingCase(true);
+    try {
+      const res = await fetch("/api/ai/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ case_code: code }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Could not close this case.");
+        return;
+      }
+      await fetchCase();
+      if (caseData?.ai_case_id) {
+        const summaryRes = await fetch(`/api/ai/summary?case_id=${caseData.ai_case_id}`);
+        const summaryData = await summaryRes.json();
+        if (summaryRes.ok && summaryData.success) setCaseSummary(summaryData.summary);
+      }
+    } finally {
+      setClosingCase(false);
+    }
+  };
+
   if (!caseData) return <div className="p-8 text-[14px] text-neutral-500">Loading case…</div>;
+
+  const activeJob = (caseData.ingestion_jobs || []).find((job) => {
+    const status = jobStatusLabel(job.status);
+    return status !== "completed" && status !== "failed";
+  });
 
   const aiData = caseData.ai_extracted_data || {};
   const personsList = aiData.persons || [];
   const unknownsList = aiData.unknown_identities || [];
   const incidentsList = aiData.incidents || [];
   const relationsList = aiData.relationships || [];
+  const entitiesList = aiData.entities || [];
 
   const getEntityName = (id: string) => {
     const found = personsList.find(
@@ -234,11 +341,24 @@ export default function AdminCaseView() {
         <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={handleRunAnalysis}
-          disabled={analyzing || !caseData.ai_case_id}
+          disabled={analyzing || !caseData.ai_case_id || caseData.status === "CLOSED" || caseSummary?.status === "CLOSED"}
           className="h-10 rounded-lg border border-red-500/35 bg-red-500/[0.12] px-4 text-[13px] font-medium text-red-200 transition-colors hover:border-red-400/60 hover:bg-red-500/20 hover:text-white disabled:opacity-50"
         >
           {analyzing ? "Analyzing…" : "Run analysis"}
         </button>
+        {caseData.status !== "CLOSED" && caseSummary?.status !== "CLOSED" ? (
+          <button
+            onClick={() => void handleCloseCase()}
+            disabled={closingCase}
+            className="h-10 rounded-lg border border-white/[0.12] bg-white/[0.04] px-4 text-[13px] font-medium text-neutral-200 transition-colors hover:border-white/25 hover:text-white disabled:opacity-50"
+          >
+            {closingCase ? "Closing…" : "Close case"}
+          </button>
+        ) : (
+          <span className="h-10 rounded-lg border border-white/10 px-4 py-2 text-[13px] text-neutral-500">
+            Closed
+          </span>
+        )}
         <button
           onClick={() => window.print()}
           className="h-10 rounded-lg border border-white/[0.12] bg-white/[0.04] px-4 text-[13px] font-medium text-neutral-200 transition-colors hover:border-white/25 hover:text-white"
@@ -269,55 +389,33 @@ export default function AdminCaseView() {
             {formatInvestigator(caseData.assigned_investigator)}
           </div>
 
-          <div className="mt-4 text-[12px] text-neutral-500">Analysis</div>
+          <div className="mt-4 text-[12px] text-neutral-500">FIR API</div>
           <div className="mt-1 text-[14px] font-medium text-white">
-            {caseData.ai_case_id ? "Ready" : "Not linked yet"}
+            {caseData.ai_case_id ? "Linked" : "Not linked"}
           </div>
+          {!caseData.ai_case_id && (
+            <button
+              onClick={linkAiCase}
+              disabled={linkingAi}
+              className="mt-3 text-[13px] text-red-300 hover:underline disabled:opacity-50"
+            >
+              {linkingAi ? "Linking…" : "Link to FIR API"}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* AI Intelligence Report Result Section */}
-      {analysisResult && (
-        <div className="mb-6 rounded-lg border border-white/10 bg-white/[0.03] p-5">
-          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-3">
-            <span className="text-[14px] font-medium text-white">Analysis results</span>
-            <button
-              onClick={() => setAnalysisResult(null)}
-              className="text-[13px] text-neutral-400 hover:text-white"
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="max-h-80 overflow-y-auto space-y-3 text-[13px] leading-6 text-neutral-300">
-            {analysisResult.summary && (
-              <div>
-                <span className="text-[12px] text-neutral-500">Summary</span>
-                <p className="mt-1 text-neutral-200">{analysisResult.summary}</p>
-              </div>
-            )}
-
-            {analysisResult.key_findings && (
-              <div>
-                <span className="text-[12px] text-neutral-500">Key findings</span>
-                <ul className="mt-1 list-disc list-inside space-y-1 text-neutral-200">
-                  {analysisResult.key_findings.map((finding: string, i: number) => (
-                    <li key={i}>{finding}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Fallback structured view for arbitrary json return */}
-            {!analysisResult.summary && (
-              <pre className="whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-300">
-                {typeof analysisResult === "string"
-                  ? analysisResult
-                  : JSON.stringify(analysisResult, null, 2)}
-              </pre>
-            )}
-          </div>
+      {activeJob && (
+        <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/[0.04] p-4">
+          <div className="mb-3 text-[12px] text-neutral-500">FIR processing pipeline</div>
+          <LiveIngestionJob jobId={activeJob.job_id || activeJob.id} initial={activeJob} />
         </div>
+      )}
+
+      {caseSummary && <CaseSummaryStrip summary={caseSummary} />}
+
+      {analysisResult && (
+        <CaseAnalysisCard result={analysisResult} onClose={() => setAnalysisResult(null)} />
       )}
 
       <div className="mb-3 flex justify-end">
@@ -331,10 +429,11 @@ export default function AdminCaseView() {
 
       <div className="mb-6 flex gap-5 overflow-x-auto border-b border-white/10 text-[13px]">
         {[
-          { key: "sources", label: `Evidence (${caseData.sources?.length || 0})` },
+          { key: "sources", label: `Evidence (${(caseData.sources?.length || 0) + (caseData.documents?.length || 0)})` },
           { key: "persons", label: `People (${personsList.length})` },
           { key: "unknowns", label: `Unknown identities (${unknownsList.length})` },
           { key: "incidents", label: `Incidents (${incidentsList.length})` },
+          { key: "entities", label: `Entities (${entitiesList.length})` },
           { key: "relations", label: `Relationships (${relationsList.length})` },
           { key: "graph", label: "Network" },
         ].map((t) => (
@@ -350,18 +449,17 @@ export default function AdminCaseView() {
         ))}
       </div>
 
-      {/* Tab 1: Sources */}
       {activeTab === "sources" && (
-        <div>
-          {!caseData.sources || caseData.sources.length === 0 ? (
+        <div className="space-y-6">
+          {(!caseData.sources || caseData.sources.length === 0) && (!caseData.documents || caseData.documents.length === 0) ? (
             <div className="rounded-lg border border-white/10 bg-white/[0.01] p-8 text-center text-[13px] text-neutral-500">
               No files have been added to this case yet.
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {caseData.sources.map((s: SourceData, i: number) => (
+              {(caseData.sources || []).map((s: SourceData, i: number) => (
                 <div
-                  key={i}
+                  key={`local-${i}`}
                   onClick={() => setPreviewSource(s)}
                   className="cursor-pointer rounded-lg border border-white/10 bg-white/[0.02] p-4 hover:border-red-500/40"
                 >
@@ -370,7 +468,47 @@ export default function AdminCaseView() {
                   <div className="mt-1 text-[12px] text-neutral-500">Open</div>
                 </div>
               ))}
+              {(caseData.documents || []).map((doc, i) => (
+                <div key={doc.document_id || doc.id || i} className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
+                  <span className="text-[11px] text-red-400">FIR document</span>
+                  <div className="mt-2 truncate text-[14px] font-medium text-white">
+                    {doc.title || doc.filename || doc.file_name || "Uploaded document"}
+                  </div>
+                  <div className="mt-1 text-[12px] text-neutral-500">{doc.status ? humanize(doc.status) : "From FIR API"}</div>
+                </div>
+              ))}
             </div>
+          )}
+          {(caseData.ingestion_jobs?.length || 0) > 0 && (
+            <div>
+              <div className="mb-2 text-[12px] text-neutral-400">FIR processing pipeline</div>
+              <div className="space-y-4">
+                {caseData.ingestion_jobs?.map((job, i) => (
+                  <div key={job.job_id || job.id || i} className="rounded-lg border border-white/10 p-4">
+                    <LiveIngestionJob jobId={job.job_id || job.id} initial={job} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "entities" && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {entitiesList.length === 0 ? (
+            <div className="col-span-full rounded-lg border border-white/5 p-8 text-center text-[13px] text-neutral-500">
+              No entities have been extracted for this case yet.
+            </div>
+          ) : (
+            entitiesList.map((entity, i) => (
+              <div key={entity.id || entity.entity_id || i} className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
+                <span className="text-[11px] text-red-400">{humanize(entity.type, "Entity")}</span>
+                <div className="mt-2 text-[14px] font-medium text-white">
+                  {entity.label || entity.name || entity.value || entity.normalized_value || entity.text || "Unnamed entity"}
+                </div>
+              </div>
+            ))
           )}
         </div>
       )}

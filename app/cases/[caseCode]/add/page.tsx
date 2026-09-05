@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import IngestionPipeline, { LiveIngestionJob } from "@/components/IngestionPipeline";
+import { jobStatusLabel, loadWorkspaceCase, type FirIngestionJob } from "@/lib/workspaceCase";
 
 interface CaseData {
   case_code: string;
   title: string;
   ai_case_id?: string;
+  ingestion_jobs?: FirIngestionJob[];
 }
 
 function humanize(value?: string | null, fallback = "") {
@@ -28,19 +31,30 @@ export default function AddFilesPage() {
   const [isSubmittingNotes, setIsSubmittingNotes] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<"idle" | "queued" | "processing" | "completed" | "failed">("idle");
+  const [jobSnapshot, setJobSnapshot] = useState<FirIngestionJob | null>(null);
+  const [linkingAi, setLinkingAi] = useState(false);
 
   const docInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
 
   const fetchCase = useCallback(async () => {
-    const res = await fetch("/api/cases");
-    const data = await res.json();
-    if (data.success) {
-      const found = data.cases.find((c: CaseData) => c.case_code === code);
-      setCaseData(found || null);
+    if (!code) return;
+    const found = await loadWorkspaceCase(code);
+    if (!found) return;
+    setCaseData(found);
+    if (jobId) return;
+    const jobs = found.ingestion_jobs || [];
+    const active = jobs.find((job) => {
+      const status = jobStatusLabel(job.status);
+      return status !== "completed" && status !== "failed";
+    }) || jobs[0];
+    if (active?.job_id || active?.id) {
+      setJobSnapshot(active);
+      setJobId(active.job_id || active.id || null);
+      setJobStatus(jobStatusLabel(active.status));
     }
-  }, [code]);
+  }, [code, jobId]);
 
   useEffect(() => {
     void fetchCase();
@@ -74,37 +88,12 @@ export default function AddFilesPage() {
     }
   }, [code, fetchCase]);
 
-  useEffect(() => {
-    if (!jobId || jobStatus === "completed" || jobStatus === "failed") return;
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/ai/job/${jobId}`);
-        const data = await res.json();
-
-        if (data && data.status) {
-          const rawStatus = String(data.status).toUpperCase();
-
-          if (rawStatus === "COMPLETED" || data.steps?.persistence === "COMPLETED") {
-            setJobStatus("completed");
-            clearInterval(interval);
-            if (caseData?.ai_case_id) {
-              await syncAiData(caseData.ai_case_id);
-            }
-          } else if (rawStatus === "FAILED" && data.error) {
-            setJobStatus("failed");
-            clearInterval(interval);
-          } else {
-            setJobStatus("processing");
-          }
-        }
-      } catch (e) {
-        console.error("Job polling error:", e);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [jobId, jobStatus, caseData?.ai_case_id, syncAiData]);
+  const handleJobSettled = useCallback(async (status: "completed" | "failed") => {
+    setJobStatus(status);
+    if (status === "completed" && caseData?.ai_case_id) {
+      await syncAiData(caseData.ai_case_id);
+    }
+  }, [caseData?.ai_case_id, syncAiData]);
 
   async function saveSourceToDB(type: string, title: string, content: string) {
     try {
@@ -146,8 +135,9 @@ export default function AddFilesPage() {
 
     reader.onload = async () => {
       const base64Data = reader.result as string;
+      let documentId = "";
 
-      if (caseData.ai_case_id && (type === "DOCUMENT" || type === "IMAGE")) {
+      if (caseData.ai_case_id) {
         try {
           setJobStatus("queued");
           const uploadData = new FormData();
@@ -160,18 +150,28 @@ export default function AddFilesPage() {
           });
 
           const result = await res.json();
+          documentId = result.document_id || "";
           if (res.ok && result.job_id) {
+            setJobSnapshot({
+              job_id: result.job_id,
+              status: result.status || "QUEUED",
+              steps: result.steps,
+            });
             setJobId(result.job_id);
-            setJobStatus("processing");
+            setJobStatus("queued");
           } else {
             setJobStatus("failed");
+            alert(result.error || "Could not upload this file to the FIR API.");
+            setSubmitting(false);
+            return;
           }
         } catch {
           setJobStatus("failed");
         }
       }
 
-      await saveSourceToDB(type, file.name, base64Data);
+      const storedContent = type === "IMAGE" ? base64Data : documentId ? `document_id:${documentId}` : file.name;
+      await saveSourceToDB(type, file.name, storedContent);
     };
 
     reader.readAsDataURL(file);
@@ -200,10 +200,15 @@ export default function AddFilesPage() {
       });
 
       if (res.ok) {
-        alert("Interview notes added.");
+        const result = await res.json();
         void logActivity("Added interview notes");
         setNotesText("");
-        if (caseData?.ai_case_id) syncAiData(caseData.ai_case_id);
+        if (result.job_id) {
+          setJobId(result.job_id);
+          setJobStatus("queued");
+        } else if (caseData?.ai_case_id) {
+          setJobStatus("processing");
+        }
       } else {
         alert("Could not add those notes. Please try again.");
       }
@@ -213,6 +218,26 @@ export default function AddFilesPage() {
       setIsSubmittingNotes(false);
     }
   };
+
+  async function linkAiCase() {
+    if (!code || linkingAi) return;
+    setLinkingAi(true);
+    try {
+      const res = await fetch("/api/ai/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ case_code: code }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Could not link this case to the FIR API.");
+        return;
+      }
+      await fetchCase();
+    } finally {
+      setLinkingAi(false);
+    }
+  }
 
   if (!caseData) {
     return <div className="p-8 text-[14px] text-neutral-500">Loading case…</div>;
@@ -235,34 +260,30 @@ export default function AddFilesPage() {
         <p className="text-[13px] text-orange-400">{caseData.case_code}</p>
         <h1 className="mt-1 text-[28px] font-semibold tracking-tight text-white">Add files to this case</h1>
         <p className="mt-2 text-[13px] leading-6 text-neutral-500">
-          Upload reports, records, photos, or notes.
+          Upload reports, records, photos, or notes. Processing continues in the background after upload.
         </p>
       </div>
 
-      {jobStatus !== "idle" && (
-        <div className="mt-8 flex items-center justify-between rounded-lg border border-orange-500/30 bg-orange-500/[0.04] p-4">
-          <div className="flex items-center gap-3">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                jobStatus === "completed" ? "bg-emerald-400" : jobStatus === "failed" ? "bg-red-500" : "bg-orange-400 animate-ping"
-              }`}
-            />
-            <div>
-              <div className="text-[14px] font-medium text-white">
-                {jobStatus === "queued" && "In the queue"}
-                {jobStatus === "processing" && "Processing file"}
-                {jobStatus === "completed" && "Processing complete"}
-                {jobStatus === "failed" && "Processing failed"}
-              </div>
-              <div className="mt-0.5 text-[13px] text-neutral-400">
-                {jobStatus === "queued" && "Your FIR is waiting to be processed."}
-                {jobStatus === "processing" && "Reading the document and pulling out people, events, and links."}
-                {jobStatus === "completed" && "People and connections are ready to review."}
-                {jobStatus === "failed" && "Something went wrong. Try uploading again."}
-              </div>
-            </div>
+      {!caseData.ai_case_id && (
+        <div className="mt-6 rounded-lg border border-orange-500/30 bg-orange-500/[0.04] p-4 text-[13px] text-neutral-300">
+          This case is not linked to the FIR API yet, so documents cannot be processed.
+          <button onClick={linkAiCase} disabled={linkingAi} className="ml-2 text-orange-300 hover:underline disabled:opacity-50">
+            {linkingAi ? "Linking…" : "Link now"}
+          </button>
+        </div>
+      )}
+
+      {(jobStatus !== "idle" || jobId) && (
+        <div className="mt-8 rounded-lg border border-orange-500/30 bg-orange-500/[0.04] p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <span className="text-[12px] text-neutral-500">FIR processing pipeline</span>
+            {jobId && <span className="font-mono text-[11px] text-neutral-500">Job {jobId.slice(0, 8)}</span>}
           </div>
-          {jobId && <span className="font-mono text-[11px] text-neutral-500">Job {jobId.slice(0, 8)}</span>}
+          {jobId ? (
+            <LiveIngestionJob jobId={jobId} initial={jobSnapshot} onSettled={handleJobSettled} />
+          ) : (
+            <IngestionPipeline status={jobStatus} />
+          )}
         </div>
       )}
 

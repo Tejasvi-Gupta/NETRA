@@ -9,6 +9,7 @@ const CASE_TABS = [
   { id: "persons", label: "People" },
   { id: "unknowns", label: "Unknown identities" },
   { id: "incidents", label: "Incidents" },
+  { id: "entities", label: "Entities" },
   { id: "relations", label: "Relationships" },
   { id: "graph", label: "Network" },
 ] as const;

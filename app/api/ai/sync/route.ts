@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Case from "@/models/case";
+import { getAICaseDetails } from "@/lib/aiApi";
 
 export async function POST(request: Request) {
   try {
@@ -10,22 +11,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
     }
 
-    // FastAPI case details fetch karo
-    const res = await fetch(`https://fir-intelligence-api.onrender.com/api/v1/cases/${ai_case_id}`, {
-      cache: "no-store",
-    });
-
-    if (!res.ok) {
-      return NextResponse.json({ error: "Failed to fetch from AI backend" }, { status: res.status });
+    const result = await getAICaseDetails(ai_case_id);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status || 502 });
     }
 
-    const aiData = await res.json();
-
-    // MongoDB me save karo
     await connectDB();
     const updatedCase = await Case.findOneAndUpdate(
       { case_code },
-      { $set: { ai_extracted_data: aiData } },
+      {
+        $set: {
+          ai_extracted_data: {
+            persons: result.data.persons || [],
+            unknown_identities: result.data.unknown_identities || [],
+            incidents: result.data.incidents || [],
+            entities: result.data.entities || [],
+            relationships: result.data.relationships || [],
+          },
+        },
+      },
       { new: true }
     );
 

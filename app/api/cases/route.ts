@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Case from "@/models/case";
 import Activity from "@/models/activity";
+import { resolveAICaseId } from "@/lib/aiApi";
 
 export async function GET() {
   try {
@@ -22,26 +23,20 @@ export async function POST(request: Request) {
     const caseCode = body.case_code || `FIR-${Date.now().toString().slice(-6)}`;
     let aiCaseId: string | null = null;
 
-    // Server-to-Server call to FastAPI backend (Bypasses Browser CORS)
     try {
-      const aiRes = await fetch("https://fir-intelligence-api.onrender.com/api/v1/cases", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-        },
-        body: JSON.stringify({
-          case_number: caseCode,
-          title: body.title,
-        }),
+      const resolved = await resolveAICaseId({
+        case_number: caseCode,
+        title: body.title,
+        case_type: body.case_type || "General Investigation",
+        priority: body.priority || "MEDIUM",
+        synopsis: body.investigation_summary || "",
+        police_station: body.police_station,
+        district: body.district,
       });
-
-      if (aiRes.ok) {
-        const aiData = await aiRes.json();
-        aiCaseId = aiData.case_id || null;
+      if (resolved.ok) {
+        aiCaseId = resolved.data.case_id;
       } else {
-        const errText = await aiRes.text();
-        console.error("AI Server returned error:", errText);
+        console.error("AI Server returned error:", resolved.error);
       }
     } catch (err) {
       console.error("Failed to connect to Render server:", err);
@@ -67,7 +62,7 @@ export async function POST(request: Request) {
       description: `Case ${newCase.case_code} ("${newCase.title}") registered.`,
     });
 
-    return NextResponse.json({ success: true, case: newCase }, { status: 201 });
+    return NextResponse.json({ success: true, case: newCase, ai_linked: Boolean(aiCaseId) }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to create case";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
