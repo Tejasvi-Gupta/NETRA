@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Case from "@/models/case";
 import { getAICaseDetails } from "@/lib/aiApi";
+import { preferExtractedList } from "@/lib/extractedCase";
 
 export async function POST(request: Request) {
   try {
@@ -17,19 +18,19 @@ export async function POST(request: Request) {
     }
 
     await connectDB();
+    const existing = await Case.findOne({ case_code }).lean();
+    const cached = (existing?.ai_extracted_data || {}) as Record<string, unknown>;
+    const extracted = {
+      persons: preferExtractedList(result.data.persons, cached.persons),
+      unknown_identities: preferExtractedList(result.data.unknown_identities, cached.unknown_identities),
+      incidents: preferExtractedList(result.data.incidents, cached.incidents),
+      entities: preferExtractedList(result.data.entities, cached.entities),
+      relationships: preferExtractedList(result.data.relationships, cached.relationships),
+    };
+
     const updatedCase = await Case.findOneAndUpdate(
       { case_code },
-      {
-        $set: {
-          ai_extracted_data: {
-            persons: result.data.persons || [],
-            unknown_identities: result.data.unknown_identities || [],
-            incidents: result.data.incidents || [],
-            entities: result.data.entities || [],
-            relationships: result.data.relationships || [],
-          },
-        },
-      },
+      { $set: { ai_extracted_data: extracted } },
       { new: true }
     );
 

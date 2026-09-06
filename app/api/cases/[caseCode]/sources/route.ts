@@ -3,6 +3,41 @@ import { connectDB } from "@/lib/mongodb";
 import Case from "@/models/case";
 import Activity from "@/models/activity";
 
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ caseCode: string }> }
+) {
+  try {
+    await connectDB();
+    const { caseCode } = await params;
+    const index = Number(new URL(request.url).searchParams.get("index"));
+
+    const caseDoc = await Case.findOne({ case_code: caseCode });
+    if (!caseDoc) {
+      return NextResponse.json({ success: false, error: "Case not found" }, { status: 404 });
+    }
+
+    if (!Number.isInteger(index) || index < 0 || index >= caseDoc.sources.length) {
+      return NextResponse.json({ success: false, error: "File not found" }, { status: 404 });
+    }
+
+    const [removed] = caseDoc.sources.splice(index, 1);
+    caseDoc.last_signal_at = new Date();
+    await caseDoc.save();
+
+    await Activity.create({
+      case_code: caseDoc.case_code,
+      event_type: "EVIDENCE_REMOVED",
+      description: `Removed ${removed.type} source "${removed.title}" from case ${caseDoc.case_code}.`,
+    });
+
+    return NextResponse.json({ success: true, sources: caseDoc.sources });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to delete file";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ caseCode: string }> }

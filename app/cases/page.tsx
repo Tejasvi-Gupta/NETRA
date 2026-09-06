@@ -140,7 +140,7 @@ export default function AllCasesPage() {
         )}
 
         <div className="border border-white/10 bg-white/[0.01]">
-          <div className="hidden border-b border-white/10 px-6 py-3.5 text-[10px] tracking-wide text-neutral-500 lg:grid lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_auto_auto_auto_1rem] lg:items-center lg:gap-x-6">
+          <div className="hidden border-b border-white/10 px-6 py-3.5 text-[10px] tracking-wide text-neutral-500 lg:grid lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_8.5rem_7.5rem_8rem_1rem] lg:items-center lg:gap-x-6">
             <div>CASE ID / TITLE</div>
             <div>INVESTIGATOR(S)</div>
             <div>PRIORITY</div>
@@ -158,7 +158,7 @@ export default function AllCasesPage() {
               <div
                 key={c._id}
                 onClick={() => openCase(c.case_code)}
-                className="cursor-pointer border-b border-white/5 px-4 py-4 transition-colors hover:bg-red-500/[0.03] lg:grid lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_auto_auto_auto_1rem] lg:items-center lg:gap-x-6 lg:px-6 lg:py-5"
+                className="cursor-pointer border-b border-white/5 px-4 py-4 transition-colors hover:bg-red-500/[0.03] lg:grid lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_8.5rem_7.5rem_8rem_1rem] lg:items-center lg:gap-x-6 lg:px-6 lg:py-5"
               >
                 <div className="min-w-0">
                   <div className="text-[11px] tracking-wide text-red-500">{c.case_code}</div>
@@ -169,12 +169,12 @@ export default function AllCasesPage() {
                     <span className="mr-1 text-neutral-600 lg:hidden">Investigator</span>
                     {formatInvestigator(c.assigned_investigator)}
                   </div>
-                  <div className={`flex items-center gap-2 text-[12px] tracking-wide ${priorityColor[c.priority]}`}>
+                  <div className={`flex items-center gap-2 whitespace-nowrap text-[12px] tracking-wide ${priorityColor[c.priority]}`}>
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
                     {c.priority}
                   </div>
-                  <div className={`text-[12px] tracking-wide ${statusColor[c.status]}`}>{c.status}</div>
-                  <div className="text-[12px] text-neutral-500">{relativeTime(c.last_signal_at)}</div>
+                  <div className={`whitespace-nowrap text-[12px] tracking-wide ${statusColor[c.status]}`}>{c.status}</div>
+                  <div className="whitespace-nowrap text-[12px] text-neutral-500">{relativeTime(c.last_signal_at)}</div>
                   <div className="hidden text-sm text-neutral-600 lg:block">›</div>
                 </div>
               </div>

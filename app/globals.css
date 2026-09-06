@@ -100,6 +100,83 @@ select option {
   }
 }
 
+.case-page-zoom {
+  zoom: 1.15;
+}
+
+.case-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.case-btn {
+  appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  margin: 0;
+  padding: 0 13px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 32px;
+  letter-spacing: 0;
+  text-shadow: none;
+  white-space: nowrap;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.case-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.case-btn-primary {
+  background: #c2410c;
+  color: #fff;
+}
+
+.case-btn-primary:hover:not(:disabled) {
+  background: #9a3412;
+}
+
+.case-btn-primary-admin {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.case-btn-primary-admin:hover:not(:disabled) {
+  background: #991b1b;
+}
+
+.case-btn-secondary {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #d4d4d4;
+}
+
+.case-btn-secondary:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+}
+
+.case-btn-ghost {
+  color: #a3a3a3;
+}
+
+.case-btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .network-map * {
     animation: none !important;

@@ -2,13 +2,40 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Case from "@/models/case";
 import Activity from "@/models/activity";
-import { resolveAICaseId } from "@/lib/aiApi";
+import { listAICases, resolveAICaseId } from "@/lib/aiApi";
 
 export async function GET() {
   try {
     await connectDB();
-    const cases = await Case.find({}).sort({ updatedAt: -1 });
-    return NextResponse.json({ success: true, cases });
+    const cases = await Case.find({}).sort({ updatedAt: -1 }).lean();
+
+    const fir = await listAICases();
+    const firByNumber = new Map<string, { case_id?: string; title?: string; status?: string; priority?: string }>();
+    if (fir.ok) {
+      for (const item of fir.data || []) {
+        if (item.case_number) firByNumber.set(item.case_number, item);
+      }
+    }
+
+    const merged = cases.map((item) => {
+      const live = firByNumber.get(item.case_code);
+      if (!live) return item;
+      return {
+        ...item,
+        ai_case_id: item.ai_case_id || live.case_id,
+        title: item.title || live.title || item.case_code,
+        priority: live.priority || item.priority,
+        status: String(live.status || "").toUpperCase() === "CLOSED" ? "CLOSED" : item.status,
+      };
+    });
+
+    const summary = {
+      activeCount: merged.filter((item) => item.status === "ACTIVE").length,
+      highRiskCount: merged.filter((item) => item.priority === "HIGH" || item.priority === "CRITICAL").length,
+      resolvedCount: merged.filter((item) => item.status === "CLOSED").length,
+    };
+
+    return NextResponse.json({ success: true, cases: merged, summary });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to fetch cases";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

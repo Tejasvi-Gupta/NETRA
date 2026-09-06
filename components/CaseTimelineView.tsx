@@ -1,17 +1,37 @@
 "use client";
 
-interface IncidentRecord {
+export interface TimelineItem {
+  timestamp?: string | null;
   title?: string;
   description?: string;
   summary?: string;
   key_points?: string[];
+  entities_involved?: string[];
   time?: { start?: string };
   extraction?: { method?: string };
 }
 
 interface CaseTimelineViewProps {
-  incidents: IncidentRecord[];
+  incidents: TimelineItem[];
   themeColor?: "red" | "orange";
+}
+
+function eventTime(item: TimelineItem, index: number) {
+  if (item.timestamp) {
+    const parsed = new Date(item.timestamp);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+    return item.timestamp;
+  }
+  if (item.time?.start) return item.time.start;
+  return `Event ${index + 1}`;
 }
 
 export default function CaseTimelineView({
@@ -52,7 +72,6 @@ export default function CaseTimelineView({
         <div className="relative border-l border-zinc-800 ml-4 pl-6 space-y-8 my-4">
           {incidents.map((inc, idx) => (
             <div key={idx} className="relative group">
-              {/* Timeline Dot Indicator */}
               <div
                 className={`absolute -left-[31px] top-1 h-3.5 w-3.5 rounded-full bg-black border-2 ${dotBorder} transition-transform group-hover:scale-125`}
               />
@@ -62,7 +81,7 @@ export default function CaseTimelineView({
               >
                 <div className="flex items-center justify-between gap-4 mb-2">
                   <span className={`text-xs font-bold font-mono tracking-wide ${textAccent}`}>
-                    {inc.time?.start ? inc.time.start : `Event ${idx + 1}`}
+                    {eventTime(inc, idx)}
                   </span>
                   {inc.extraction?.method && (
                     <span className={`rounded border px-2 py-0.5 text-[11px] ${badgeBg}`}>
@@ -78,6 +97,19 @@ export default function CaseTimelineView({
                 <p className="text-[13px] leading-6 text-zinc-300">
                   {inc.description || inc.summary || "No details recorded."}
                 </p>
+
+                {inc.entities_involved && inc.entities_involved.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {inc.entities_involved.map((name) => (
+                      <span
+                        key={name}
+                        className="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-neutral-300"
+                      >
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {inc.key_points && inc.key_points.length > 0 && (
                   <div className="mt-3 border-t border-zinc-800/60 pt-2.5">

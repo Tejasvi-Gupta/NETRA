@@ -1,18 +1,31 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, useCallback } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import AddRelationshipForm from "@/components/AddRelationshipForm";
 import CaseTimelineView from "@/components/CaseTimelineView";
 import ForensicDossierPrint from "@/components/ForensicDossierPrint";
 import SourcePreviewModal from "@/components/SourcePreviewModal";
 import CaseNetworkMap from "@/components/CaseNetworkMap";
+import CaseChatDrawer from "@/components/CaseChatDrawer";
 import CaseAnalysisCard from "@/components/CaseAnalysisCard";
-import CaseSummaryStrip from "@/components/CaseSummaryStrip";
+import CaseEntitiesPanel from "@/components/CaseEntitiesPanel";
 import { LiveIngestionJob } from "@/components/IngestionPipeline";
 import { formatInvestigator } from "@/lib/auth";
-import { jobStatusLabel, loadWorkspaceCase } from "@/lib/workspaceCase";
+import { recordFirActivity } from "@/lib/firActivity";
+import { jobStatusLabel, leftoverFirDocuments, loadWorkspaceCase } from "@/lib/workspaceCase";
 import type { FirDocument, FirIngestionJob } from "@/lib/workspaceCase";
 import type { CaseSummary, InvestigationAnalysis } from "@/lib/aiApi";
+import { buildCaseNetwork, type CaseNetworkNode } from "@/lib/caseNetwork";
+import { formatRelationship } from "@/lib/relationships";
+import {
+  caseStatusLabel,
+  displayCaseStatus,
+  incidentWhen,
+  isCaseClosed,
+  relationEndKey,
+  resolveEntityLabel,
+} from "@/lib/extractedCase";
 
 interface SourceData {
   type: string;
@@ -47,11 +60,14 @@ interface UnknownIdentityRecord {
 }
 
 interface IncidentRecord {
+  timestamp?: string | null;
   title?: string;
   description?: string;
+  summary?: string;
   time?: { start?: string };
   extraction?: { method?: string };
   key_points?: string[];
+  entities_involved?: string[];
 }
 
 interface RelationRecord {
@@ -96,57 +112,65 @@ interface CaseData {
   ingestion_jobs?: FirIngestionJob[];
 }
 
-interface GraphNode {
-  id: string;
-  label?: string;
-  type?: string;
-}
-
-interface GraphEntityRef {
-  id?: string;
-}
-
-interface GraphEdge {
-  from?: GraphEntityRef | string;
-  to?: GraphEntityRef | string;
-  source?: string;
-  target?: string;
-  type?: string;
-  label?: string;
-  evidence?: string;
-}
-
-interface GraphData {
-  nodes?: GraphNode[];
-  edges?: GraphEdge[];
-  relationships?: GraphEdge[];
-}
-
 type AnalysisResult = InvestigationAnalysis;
 
 type ActiveTab = "sources" | "persons" | "unknowns" | "incidents" | "entities" | "relations" | "graph";
+
+function isActiveTab(value: string | null): value is ActiveTab {
+  return value === "sources" || value === "persons" || value === "unknowns" || value === "incidents" || value === "entities" || value === "relations" || value === "graph";
+}
 
 function humanize(value?: string | null, fallback = "") {
   if (!value) return fallback;
   return value.replace(/[_-]+/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export default function AdminCaseView() {
+export default function AdminCasePage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-[14px] text-neutral-500">Loading case…</div>}>
+      <AdminCaseView />
+    </Suspense>
+  );
+}
+
+function AdminCaseView() {
   const { caseCode } = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [caseData, setCaseData] = useState<CaseData | null>(null);
   const [previewSource, setPreviewSource] = useState<SourceData | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>("sources");
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [caseSummary, setCaseSummary] = useState<CaseSummary | null>(null);
-  const [graphData, setGraphData] = useState<GraphData | null>(null);
-  const [loadingGraph, setLoadingGraph] = useState(false);
-  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [selectedNode, setSelectedNode] = useState<CaseNetworkNode | null>(null);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [linkingAi, setLinkingAi] = useState(false);
   const [closingCase, setClosingCase] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [deletingSource, setDeletingSource] = useState<number | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<IncidentRecord[]>([]);
+  const [showAddRelModal, setShowAddRelModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (isActiveTab(tab)) {
+      setActiveTab(tab);
+      return;
+    }
+    if (!tab) setActiveTab("sources");
+  }, [searchParams]);
+
+  function selectTab(tab: ActiveTab) {
+    setActiveTab(tab);
+    const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
+    if (!code) return;
+    const next = tab === "sources" ? `/admin/cases/${code}` : `/admin/cases/${code}?tab=${tab}`;
+    router.replace(next, { scroll: false });
+  }
 
   const fetchCase = useCallback(async () => {
     const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
@@ -154,6 +178,29 @@ export default function AdminCaseView() {
     const found = await loadWorkspaceCase(code);
     setCaseData(found as CaseData | null);
   }, [caseCode]);
+
+  const handleDeleteSource = async (index: number, title: string) => {
+    const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
+    if (!code || deletingSource !== null) return;
+    if (!window.confirm(`Remove "${title}" from this case?`)) return;
+
+    setDeletingSource(index);
+    try {
+      const res = await fetch(`/api/cases/${code}/sources?index=${index}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Could not remove that file.");
+        return;
+      }
+      if (previewSource?.title === title) setPreviewSource(null);
+      void recordFirActivity(caseData?.ai_case_id, "EVIDENCE_REMOVED");
+      await fetchCase();
+    } catch {
+      alert("Could not remove that file. Please try again.");
+    } finally {
+      setDeletingSource(null);
+    }
+  };
 
   const linkAiCase = async () => {
     const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
@@ -182,44 +229,6 @@ export default function AdminCaseView() {
     })();
   }, [fetchCase]);
 
-  // Load graph data for the workspace and printable dossier
-  useEffect(() => {
-    if (!caseData?.ai_case_id) return;
-
-    async function fetchGraph() {
-      setLoadingGraph(true);
-      try {
-        const res = await fetch(`/api/ai/graph?case_id=${caseData?.ai_case_id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setGraphData(data);
-        }
-      } catch (err) {
-        console.error("Failed to load graph data:", err);
-      } finally {
-        setLoadingGraph(false);
-      }
-    }
-
-    fetchGraph();
-  }, [activeTab, caseData?.ai_case_id]);
-
-  useEffect(() => {
-    if (!caseData?.ai_case_id) return;
-
-    async function loadSavedAnalysis() {
-      try {
-        const res = await fetch(`/api/ai/analysis?case_id=${caseData?.ai_case_id}`);
-        const data = await res.json();
-        if (res.ok && data.success) setAnalysisResult(data);
-      } catch (error) {
-        console.error("Failed to load saved analysis:", error);
-      }
-    }
-
-    void loadSavedAnalysis();
-  }, [caseData?.ai_case_id]);
-
   useEffect(() => {
     if (!caseData?.ai_case_id) {
       setCaseSummary(null);
@@ -239,6 +248,27 @@ export default function AdminCaseView() {
     void loadSummary();
   }, [caseData?.ai_case_id, analysisResult?.case_id]);
 
+  useEffect(() => {
+    if (!caseData?.ai_case_id) {
+      setTimelineEvents([]);
+      return;
+    }
+
+    async function loadTimeline() {
+      try {
+        const res = await fetch(`/api/ai/timeline?case_id=${caseData?.ai_case_id}`);
+        const data = await res.json();
+        if (res.ok && data.success && Array.isArray(data.events)) {
+          setTimelineEvents(data.events);
+        }
+      } catch (error) {
+        console.error("Failed to load FIR timeline:", error);
+      }
+    }
+
+    void loadTimeline();
+  }, [caseData?.ai_case_id, analysisResult?.case_id]);
+
   const handleRunAnalysis = async () => {
     if (!caseData?.ai_case_id) {
       alert("This case is not linked to analysis yet.");
@@ -254,6 +284,7 @@ export default function AdminCaseView() {
       const data = await res.json();
       if (res.ok && data.success !== false) {
         setAnalysisResult(data);
+        void recordFirActivity(caseData.ai_case_id, "ANALYSIS_RUN");
         await fetchCase();
       } else {
         alert(data.error || data.detail || "Analysis failed. Please try again.");
@@ -262,6 +293,39 @@ export default function AdminCaseView() {
       alert("Could not start analysis. Please try again.");
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handleSetStatus = async (status: "ACTIVE" | "UNDER_REVIEW") => {
+    const code = Array.isArray(caseCode) ? caseCode[0] : caseCode;
+    if (!code || updatingStatus || closingCase) return;
+    const goingToReview = status === "UNDER_REVIEW";
+    if (
+      !window.confirm(
+        goingToReview
+          ? "Mark this case as under review?"
+          : "Return this case to active investigation?"
+      )
+    ) {
+      return;
+    }
+
+    setUpdatingStatus(true);
+    try {
+      const res = await fetch(`/api/cases/${code}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Could not update case status.");
+        return;
+      }
+      void recordFirActivity(caseData?.ai_case_id, goingToReview ? "CASE_UNDER_REVIEW" : "CASE_REOPENED");
+      await fetchCase();
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -306,20 +370,66 @@ export default function AdminCaseView() {
   const incidentsList = aiData.incidents || [];
   const relationsList = aiData.relationships || [];
   const entitiesList = aiData.entities || [];
+  const displayTimeline = timelineEvents.length > 0 ? timelineEvents : incidentsList;
+  const uniqueDocuments = leftoverFirDocuments(caseData.sources, caseData.documents);
+  const evidenceCount = (caseData.sources?.length || 0) + uniqueDocuments.length;
+  const connectionNames = Array.from(new Set([
+    ...personsList.map((item) => {
+      const profile = item.person || item;
+      return (profile.identity?.name || profile.name || profile.canonical_name || "").trim();
+    }),
+    ...unknownsList.map((unknown) => (unknown.label || unknown.alias || unknown.identifier || "").trim()),
+    ...entitiesList.map((entity) => (entity.label || entity.name || entity.value || entity.text || "").trim()),
+  ].filter(Boolean))).sort((left, right) => left.localeCompare(right));
 
-  const getEntityName = (id: string) => {
-    const found = personsList.find(
-      (item: PersonRecord) => (item.person?.person_id || item.person_id) === id
-    );
-    return found?.person?.identity?.name || found?.name || id;
+  const getEntityName = (relation: RelationRecord, side: "source" | "target") => {
+    const fallback = side === "source" ? "Node A" : "Node B";
+    return resolveEntityLabel(relationEndKey(relation, side) || fallback, personsList);
   };
 
-  const graphNodes = graphData?.nodes || [];
-  const graphEdges = graphData?.edges || graphData?.relationships || [];
+  const caseClosed = isCaseClosed(caseData.status, caseSummary?.status);
+  const caseStatus = displayCaseStatus(caseData.status, caseSummary?.status);
+  const query = searchQuery.toLowerCase().trim();
+
+  const filteredPersons = personsList.filter((item: PersonRecord) => {
+    const person = item.person || item;
+    const name = (person.identity?.name || person.name || person.canonical_name || "").toLowerCase();
+    const role = ((item.roles && item.roles[0]) || person.role || "").toLowerCase();
+    const phone = (person.contact?.phones?.join(" ") || person.phone || "").toLowerCase();
+    const aliases = (person.identity?.aliases?.join(" ") || "").toLowerCase();
+    return name.includes(query) || role.includes(query) || phone.includes(query) || aliases.includes(query);
+  });
+
+  const filteredUnknowns = unknownsList.filter((unknown: UnknownIdentityRecord) => {
+    const label = (unknown.label || unknown.alias || "").toLowerCase();
+    const description = (unknown.description || "").toLowerCase();
+    return label.includes(query) || description.includes(query);
+  });
+
+  const filteredIncidents = incidentsList.filter((incident: IncidentRecord) => {
+    const text = (incident.title || incident.description || incident.summary || "").toLowerCase();
+    const points = (incident.key_points?.join(" ") || "").toLowerCase();
+    return text.includes(query) || points.includes(query);
+  });
+
+  const filteredRelations = relationsList.filter((relation: RelationRecord) => {
+    const fromName = getEntityName(relation, "source").toLowerCase();
+    const toName = getEntityName(relation, "target").toLowerCase();
+    const type = (relation.type || "").toLowerCase();
+    const evidence = (relation.evidence || "").toLowerCase();
+    return fromName.includes(query) || toName.includes(query) || type.includes(query) || evidence.includes(query);
+  });
+
+  const { nodes: graphNodes, edges: graphEdges } = buildCaseNetwork({
+    persons: personsList,
+    unknowns: unknownsList,
+    entities: entitiesList,
+    relationships: relationsList,
+  });
 
   return (
     <>
-    <div className="relative min-h-screen overflow-x-hidden bg-[#050505] text-neutral-200 print:hidden">
+    <div className="case-page-zoom relative min-h-screen overflow-x-hidden bg-[#050505] text-neutral-200 print:hidden">
       <div
         className="pointer-events-none fixed inset-0 opacity-[0.05]"
         style={{
@@ -333,77 +443,88 @@ export default function AdminCaseView() {
       <div className="pointer-events-none fixed -bottom-40 right-0 h-[500px] w-[500px] rounded-full bg-orange-600/10 blur-[130px]" />
 
       <div className="relative z-10 mx-auto max-w-[1180px] px-4 py-8 sm:px-8 sm:py-10">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <button onClick={() => router.push("/admin/dashboard")} className="text-[13px] text-neutral-400 hover:text-white">
-          ← Intelligence Workspace
-        </button>
-
-        <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={handleRunAnalysis}
-          disabled={analyzing || !caseData.ai_case_id || caseData.status === "CLOSED" || caseSummary?.status === "CLOSED"}
-          className="h-10 rounded-lg border border-red-500/35 bg-red-500/[0.12] px-4 text-[13px] font-medium text-red-200 transition-colors hover:border-red-400/60 hover:bg-red-500/20 hover:text-white disabled:opacity-50"
-        >
-          {analyzing ? "Analyzing…" : "Run analysis"}
-        </button>
-        {caseData.status !== "CLOSED" && caseSummary?.status !== "CLOSED" ? (
-          <button
-            onClick={() => void handleCloseCase()}
-            disabled={closingCase}
-            className="h-10 rounded-lg border border-white/[0.12] bg-white/[0.04] px-4 text-[13px] font-medium text-neutral-200 transition-colors hover:border-white/25 hover:text-white disabled:opacity-50"
-          >
-            {closingCase ? "Closing…" : "Close case"}
+      <div className="mb-8 border-b border-white/10 pb-6">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <button onClick={() => router.push("/admin/dashboard")} className="text-[13px] text-neutral-500 hover:text-white">
+            ← Intelligence Workspace
           </button>
-        ) : (
-          <span className="h-10 rounded-lg border border-white/10 px-4 py-2 text-[13px] text-neutral-500">
-            Closed
+          <button onClick={() => window.print()} className="case-btn case-btn-secondary shrink-0">
+            Export report
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[13px] font-medium text-red-400">{caseData.case_code}</span>
+          <span className="rounded-full border border-red-500/25 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-300">
+            {caseStatusLabel(caseData.status, caseSummary?.status)}
           </span>
-        )}
-        <button
-          onClick={() => window.print()}
-          className="h-10 rounded-lg border border-white/[0.12] bg-white/[0.04] px-4 text-[13px] font-medium text-neutral-200 transition-colors hover:border-white/25 hover:text-white"
-        >
-          Export report
-        </button>
         </div>
-      </div>
+        <h1 className="mt-2 text-[28px] font-semibold tracking-tight text-white sm:text-[32px]">{caseData.title}</h1>
+        <p className="mt-2 max-w-3xl text-[13px] leading-6 text-neutral-500">
+          {caseData.investigation_summary || "No summary provided."}
+        </p>
+        <p className="mt-3 text-[13px] text-neutral-500">
+          Investigator <span className="text-neutral-300">{formatInvestigator(caseData.assigned_investigator)}</span>
+        </p>
 
-      <div className="mb-6 flex flex-col justify-between gap-4 border-b border-white/10 pb-6 sm:flex-row sm:items-start">
-        <div className="min-w-0">
-          <span className="text-[11px] font-semibold tracking-wide text-red-500">{caseData.case_code}</span>
-          <h1 className="mt-1 text-[28px] font-semibold tracking-tight text-white sm:text-[32px]">{caseData.title}</h1>
-          <p className="mt-2 text-[13px] leading-6 text-neutral-500">{caseData.investigation_summary || "No summary provided."}</p>
-        </div>
-        <div className="w-full shrink-0 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-4 sm:w-[240px]">
-          <div className="text-[12px] text-neutral-500">Status</div>
-          <div className="mt-1 text-[14px] font-medium text-white">
-            {caseData.status === "UNDER_REVIEW"
-              ? "Under review"
-              : caseData.status === "CLOSED"
-                ? "Closed"
-                : "Active"}
-          </div>
-
-          <div className="mt-4 text-[12px] text-neutral-500">Investigator</div>
-          <div className="mt-1 text-[14px] font-medium leading-5 text-white">
-            {formatInvestigator(caseData.assigned_investigator)}
-          </div>
-
-          <div className="mt-4 text-[12px] text-neutral-500">FIR API</div>
-          <div className="mt-1 text-[14px] font-medium text-white">
-            {caseData.ai_case_id ? "Linked" : "Not linked"}
-          </div>
+        <div className="case-toolbar mt-5">
+          <button
+            onClick={handleRunAnalysis}
+            disabled={analyzing || !caseData.ai_case_id || caseClosed}
+            className="case-btn case-btn-primary-admin"
+          >
+            {analyzing ? "Analyzing…" : "Run analysis"}
+          </button>
+          <button onClick={() => setIsChatOpen(true)} className="case-btn case-btn-secondary">
+            Netra Ai
+          </button>
+          {!caseClosed && (
+            <>
+              <span className="hidden h-4 w-px bg-white/10 sm:block" />
+              {caseStatus === "ACTIVE" ? (
+                <button
+                  onClick={() => void handleSetStatus("UNDER_REVIEW")}
+                  disabled={updatingStatus}
+                  className="case-btn case-btn-ghost"
+                >
+                  {updatingStatus ? "Updating…" : "Mark under review"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => void handleSetStatus("ACTIVE")}
+                  disabled={updatingStatus}
+                  className="case-btn case-btn-ghost"
+                >
+                  {updatingStatus ? "Updating…" : "Return to active"}
+                </button>
+              )}
+              <button
+                onClick={() => void handleCloseCase()}
+                disabled={closingCase || updatingStatus}
+                className="case-btn case-btn-ghost"
+              >
+                {closingCase ? "Closing…" : "Close case"}
+              </button>
+            </>
+          )}
           {!caseData.ai_case_id && (
             <button
               onClick={linkAiCase}
               disabled={linkingAi}
-              className="mt-3 text-[13px] text-red-300 hover:underline disabled:opacity-50"
+              className="case-btn case-btn-ghost"
             >
               {linkingAi ? "Linking…" : "Link to FIR API"}
             </button>
           )}
         </div>
       </div>
+
+      <CaseChatDrawer
+        aiCaseId={caseData?.ai_case_id ?? ""}
+        audience="admin"
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+      />
 
       {activeJob && (
         <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/[0.04] p-4">
@@ -412,46 +533,69 @@ export default function AdminCaseView() {
         </div>
       )}
 
-      {caseSummary && <CaseSummaryStrip summary={caseSummary} />}
-
       {analysisResult && (
-        <CaseAnalysisCard result={analysisResult} onClose={() => setAnalysisResult(null)} />
+        <CaseAnalysisCard
+          result={analysisResult}
+          caseSummary={caseData.investigation_summary}
+          onClose={() => setAnalysisResult(null)}
+        />
       )}
 
-      <div className="mb-3 flex justify-end">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search people, phone numbers, or incidents…"
+            className="h-9 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3.5 text-[13px] text-white placeholder-neutral-500 outline-none focus:border-red-500/50"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-2 text-[13px] text-neutral-500 hover:text-white"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <button
           onClick={() => setIsTimelineOpen(true)}
-          className="h-10 rounded-lg border border-red-500/35 bg-red-500/[0.12] px-4 text-[13px] font-medium text-red-200 transition-colors hover:border-red-400/60 hover:bg-red-500/20 hover:text-white"
+          className="h-9 shrink-0 rounded-lg border border-white/10 px-3 text-[13px] text-neutral-300 hover:border-red-500/40 hover:text-red-200"
         >
-          Timeline ({incidentsList.length})
+          Timeline ({displayTimeline.length})
         </button>
       </div>
 
-      <div className="mb-6 flex gap-5 overflow-x-auto border-b border-white/10 text-[13px]">
-        {[
-          { key: "sources", label: `Evidence (${(caseData.sources?.length || 0) + (caseData.documents?.length || 0)})` },
-          { key: "persons", label: `People (${personsList.length})` },
-          { key: "unknowns", label: `Unknown identities (${unknownsList.length})` },
-          { key: "incidents", label: `Incidents (${incidentsList.length})` },
-          { key: "entities", label: `Entities (${entitiesList.length})` },
-          { key: "relations", label: `Relationships (${relationsList.length})` },
-          { key: "graph", label: "Network" },
-        ].map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setActiveTab(t.key as ActiveTab)}
-            className={`whitespace-nowrap border-b-2 pb-3 ${
-              activeTab === t.key ? "border-red-500 text-red-300" : "border-transparent text-neutral-500 hover:text-neutral-300"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="mb-6 flex items-end gap-3 border-b border-white/10">
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          <div className="flex gap-5 text-[13px]">
+            {[
+              { key: "sources", label: `Evidence (${evidenceCount})` },
+              { key: "persons", label: `People (${personsList.length})` },
+              { key: "unknowns", label: `Unknown identities (${unknownsList.length})` },
+              { key: "incidents", label: `Incidents (${incidentsList.length})` },
+              { key: "entities", label: `Entities (${entitiesList.length})` },
+              { key: "relations", label: `Relationships (${relationsList.length})` },
+              { key: "graph", label: "Network" },
+            ].map((t) => (
+              <button
+                key={t.key}
+                onClick={() => selectTab(t.key as ActiveTab)}
+                className={`whitespace-nowrap border-b-2 pb-3 ${
+                  activeTab === t.key ? "border-red-500 text-red-300" : "border-transparent text-neutral-500 hover:text-neutral-300"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {activeTab === "sources" && (
         <div className="space-y-6">
-          {(!caseData.sources || caseData.sources.length === 0) && (!caseData.documents || caseData.documents.length === 0) ? (
+          {evidenceCount === 0 ? (
             <div className="rounded-lg border border-white/10 bg-white/[0.01] p-8 text-center text-[13px] text-neutral-500">
               No files have been added to this case yet.
             </div>
@@ -463,12 +607,25 @@ export default function AdminCaseView() {
                   onClick={() => setPreviewSource(s)}
                   className="cursor-pointer rounded-lg border border-white/10 bg-white/[0.02] p-4 hover:border-red-500/40"
                 >
-                  <span className="text-[11px] text-red-400">{humanize(s.type)}</span>
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-[11px] text-red-400">{humanize(s.type)}</span>
+                    <button
+                      type="button"
+                      disabled={deletingSource !== null}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleDeleteSource(i, s.title);
+                      }}
+                      className="text-[12px] text-neutral-500 hover:text-red-400 disabled:opacity-50"
+                    >
+                      {deletingSource === i ? "Removing…" : "Delete"}
+                    </button>
+                  </div>
                   <div className="mt-2 truncate text-[14px] font-medium text-white">{s.title}</div>
                   <div className="mt-1 text-[12px] text-neutral-500">Open</div>
                 </div>
               ))}
-              {(caseData.documents || []).map((doc, i) => (
+              {uniqueDocuments.map((doc, i) => (
                 <div key={doc.document_id || doc.id || i} className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
                   <span className="text-[11px] text-red-400">FIR document</span>
                   <div className="mt-2 truncate text-[14px] font-medium text-white">
@@ -479,46 +636,17 @@ export default function AdminCaseView() {
               ))}
             </div>
           )}
-          {(caseData.ingestion_jobs?.length || 0) > 0 && (
-            <div>
-              <div className="mb-2 text-[12px] text-neutral-400">FIR processing pipeline</div>
-              <div className="space-y-4">
-                {caseData.ingestion_jobs?.map((job, i) => (
-                  <div key={job.job_id || job.id || i} className="rounded-lg border border-white/10 p-4">
-                    <LiveIngestionJob jobId={job.job_id || job.id} initial={job} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
-      {activeTab === "entities" && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {entitiesList.length === 0 ? (
-            <div className="col-span-full rounded-lg border border-white/5 p-8 text-center text-[13px] text-neutral-500">
-              No entities have been extracted for this case yet.
-            </div>
-          ) : (
-            entitiesList.map((entity, i) => (
-              <div key={entity.id || entity.entity_id || i} className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
-                <span className="text-[11px] text-red-400">{humanize(entity.type, "Entity")}</span>
-                <div className="mt-2 text-[14px] font-medium text-white">
-                  {entity.label || entity.name || entity.value || entity.normalized_value || entity.text || "Unnamed entity"}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
+      {activeTab === "entities" && <CaseEntitiesPanel entities={entitiesList} />}
 
       {/* Tab 2: Persons */}
       {activeTab === "persons" && (
         <div className="space-y-3">
           {personsList.length > 0 ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {personsList.map((item: PersonRecord, idx: number) => {
+              {filteredPersons.map((item: PersonRecord, idx: number) => {
                 const p = item.person || item;
                 const name = p.identity?.name || p.name || p.canonical_name || "Unnamed person";
                 const role = humanize((item.roles && item.roles[0]) || p.role, "Person of interest");
@@ -559,7 +687,7 @@ export default function AdminCaseView() {
               No unknown identities in this case.
             </div>
           ) : (
-            unknownsList.map((u: UnknownIdentityRecord, idx: number) => (
+            filteredUnknowns.map((u: UnknownIdentityRecord, idx: number) => (
               <div key={idx} className="flex flex-col justify-between rounded-lg border border-red-500/30 bg-red-950/10 p-4">
                 <div>
                   <div className="flex items-center justify-between gap-2">
@@ -585,11 +713,11 @@ export default function AdminCaseView() {
       {activeTab === "incidents" && (
         <div className="space-y-3">
           {incidentsList.length > 0 ? (
-            incidentsList.map((inc: IncidentRecord, idx: number) => (
+            filteredIncidents.map((inc: IncidentRecord, idx: number) => (
               <div key={idx} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[13px] font-medium text-red-300">
-                    {inc.time?.start ? inc.time.start : "Incident"}
+                    {incidentWhen(inc)}
                   </span>
                   {inc.extraction?.method && (
                     <span className="rounded border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400">
@@ -628,27 +756,55 @@ export default function AdminCaseView() {
       {/* Tab 5: Relations */}
       {activeTab === "relations" && (
         <div className="space-y-2">
+          <div className="mb-4 flex items-center justify-between">
+            <span className="text-[13px] text-neutral-400">How people and entities are linked</span>
+            {!showAddRelModal && (
+              <button
+                onClick={() => setShowAddRelModal(true)}
+                className="case-btn case-btn-secondary"
+              >
+                Add connection
+              </button>
+            )}
+          </div>
+
+          {showAddRelModal && caseData.ai_case_id && (
+            <AddRelationshipForm
+              caseCode={caseData.case_code}
+              aiCaseId={caseData.ai_case_id}
+              names={connectionNames}
+              accent="red"
+              onCancel={() => setShowAddRelModal(false)}
+              onSaved={async () => {
+                setShowAddRelModal(false);
+                await fetchCase();
+                const timelineRes = await fetch(`/api/ai/timeline?case_id=${caseData.ai_case_id}`);
+                const timelineData = await timelineRes.json();
+                if (timelineRes.ok && timelineData.success) setTimelineEvents(timelineData.events || []);
+              }}
+            />
+          )}
+          {showAddRelModal && !caseData.ai_case_id && (
+            <p className="mb-4 text-[13px] text-amber-300">Link this case to the FIR API before adding a connection.</p>
+          )}
+
           {relationsList.length === 0 ? (
-            <div className="text-xs text-neutral-500 p-8 text-center border border-white/5">
-              No relationships recorded yet.
+            <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-[13px] leading-6 text-zinc-500">
+              No connections recorded yet. Add one when you have evidence that two people or entities are linked.
             </div>
           ) : (
-            relationsList.map((rel: RelationRecord, idx: number) => {
-              const fromName = getEntityName(rel.from?.id || rel.source || "Node A");
-              const toName = getEntityName(rel.to?.id || rel.target || "Node B");
+            filteredRelations.map((rel: RelationRecord, idx: number) => {
+              const fromName = getEntityName(rel, "source");
+              const toName = getEntityName(rel, "target");
 
               return (
-                <div key={idx} className="border border-zinc-800 bg-zinc-950 p-4 rounded">
-                  <div className="flex items-center justify-between border-b border-zinc-900 pb-2 mb-2">
-                    <span className="text-xs font-bold text-white">{fromName}</span>
-                    <span className="rounded border border-red-500/30 bg-red-500/10 px-2.5 py-0.5 text-[12px] text-red-300">
-                      {humanize(rel.type, "Linked to")}
-                    </span>
-                    <span className="text-xs font-bold text-white">{toName}</span>
-                  </div>
+                <div key={idx} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+                  <p className="text-[14px] leading-6 text-white">
+                    {formatRelationship(fromName, rel.type, toName)}
+                  </p>
                   {rel.evidence && (
-                    <p className="text-[11px] text-zinc-400 italic leading-relaxed mt-1">
-                      &quot;{rel.evidence}&quot;
+                    <p className="mt-2 text-[13px] leading-6 text-zinc-400">
+                      {rel.evidence}
                     </p>
                   )}
                 </div>
@@ -662,9 +818,14 @@ export default function AdminCaseView() {
         <CaseNetworkMap
           nodes={graphNodes}
           edges={graphEdges}
-          loading={loadingGraph}
           accent="red"
-          onSelectNode={setSelectedNode}
+          onSelectNode={(node) =>
+            setSelectedNode({
+              id: node.id,
+              label: node.label || node.id,
+              type: node.type || "NODE",
+            })
+          }
         />
       )}
 
@@ -693,14 +854,10 @@ export default function AdminCaseView() {
               </div>
               <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
                 {graphEdges
-                  .filter((edge) => {
-                    const fromId = typeof edge.from === "object" ? edge.from?.id : edge.from;
-                    const toId = typeof edge.to === "object" ? edge.to?.id : edge.to;
-                    return (fromId || edge.source) === selectedNode.id || (toId || edge.target) === selectedNode.id;
-                  })
+                  .filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id)
                   .map((edge, idx) => {
-                    const fromId = (typeof edge.from === "object" ? edge.from?.id : edge.from) || edge.source || "";
-                    const toId = (typeof edge.to === "object" ? edge.to?.id : edge.to) || edge.target || "";
+                    const fromId = edge.source;
+                    const toId = edge.target;
                     const isSource = fromId === selectedNode.id;
                     const targetNode = graphNodes.find((node) => node.id === (isSource ? toId : fromId));
 
@@ -750,7 +907,7 @@ export default function AdminCaseView() {
                 Close
               </button>
             </div>
-            <CaseTimelineView incidents={incidentsList} themeColor="red" />
+            <CaseTimelineView incidents={displayTimeline} themeColor="red" />
           </div>
         </div>
       )}
@@ -766,7 +923,7 @@ export default function AdminCaseView() {
       caseData={caseData}
       persons={personsList}
       unknowns={unknownsList}
-      incidents={incidentsList}
+      incidents={displayTimeline}
       relations={relationsList}
       graphNodes={graphNodes}
       graphEdges={graphEdges}

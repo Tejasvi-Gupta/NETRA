@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Case from "@/models/case";
 import Activity from "@/models/activity";
-import { closeAICase } from "@/lib/aiApi";
+import { closeAICase, recordCaseActivity } from "@/lib/aiApi";
 
 export async function POST(request: Request) {
   try {
@@ -30,6 +30,10 @@ export async function POST(request: Request) {
 
     caseDoc.status = "CLOSED";
     await caseDoc.save();
+
+    if (caseDoc.ai_case_id) {
+      await recordCaseActivity(caseDoc.ai_case_id, "CASE_CLOSED", "NETRA");
+    }
 
     await Activity.create({
       case_code: caseDoc.case_code,

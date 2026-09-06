@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import IngestionPipeline, { LiveIngestionJob } from "@/components/IngestionPipeline";
+import { recordFirActivity } from "@/lib/firActivity";
 import { jobStatusLabel, loadWorkspaceCase, type FirIngestionJob } from "@/lib/workspaceCase";
 
 interface CaseData {
@@ -10,6 +11,20 @@ interface CaseData {
   title: string;
   ai_case_id?: string;
   ingestion_jobs?: FirIngestionJob[];
+  sources?: { type: string; title: string }[];
+  documents?: { filename?: string; file_name?: string; title?: string }[];
+}
+
+function sameFileName(left: string, right: string) {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+function fileAlreadyOnCase(fileName: string, data: CaseData) {
+  const inSources = (data.sources || []).some((source) => sameFileName(source.title, fileName));
+  const inDocuments = (data.documents || []).some((doc) =>
+    sameFileName(doc.filename || doc.file_name || doc.title || "", fileName)
+  );
+  return inSources || inDocuments;
 }
 
 function humanize(value?: string | null, fallback = "") {
@@ -33,6 +48,7 @@ export default function AddFilesPage() {
   const [jobStatus, setJobStatus] = useState<"idle" | "queued" | "processing" | "completed" | "failed">("idle");
   const [jobSnapshot, setJobSnapshot] = useState<FirIngestionJob | null>(null);
   const [linkingAi, setLinkingAi] = useState(false);
+  const [deletingSource, setDeletingSource] = useState<number | null>(null);
 
   const docInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -95,6 +111,28 @@ export default function AddFilesPage() {
     }
   }, [caseData?.ai_case_id, syncAiData]);
 
+  async function handleDeleteSource(index: number, title: string) {
+    if (!code || deletingSource !== null) return;
+    if (!window.confirm(`Remove "${title}" from this case?`)) return;
+
+    setDeletingSource(index);
+    try {
+      const res = await fetch(`/api/cases/${code}/sources?index=${index}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || "Could not remove that file.");
+        return;
+      }
+      void logActivity(`Removed uploaded file: ${title}`);
+      void recordFirActivity(caseData?.ai_case_id, "EVIDENCE_REMOVED");
+      await fetchCase();
+    } catch {
+      alert("Could not remove that file. Please try again.");
+    } finally {
+      setDeletingSource(null);
+    }
+  }
+
   async function saveSourceToDB(type: string, title: string, content: string) {
     try {
       const res = await fetch(`/api/cases/${code}/sources`, {
@@ -113,6 +151,7 @@ export default function AddFilesPage() {
         setSourceTitle("");
         setSourceContent("");
         void logActivity(`Added ${type.toLowerCase()}: ${title}`);
+        void recordFirActivity(caseData?.ai_case_id, type === "DOCUMENT" ? "DOCUMENT_UPLOADED" : "EVIDENCE_ADDED");
         fetchCase();
       }
     } finally {
@@ -128,6 +167,16 @@ export default function AddFilesPage() {
       alert("Please upload a PDF file.");
       e.target.value = "";
       return;
+    }
+
+    if (fileAlreadyOnCase(file.name, caseData)) {
+      const proceed = window.confirm(
+        `"${file.name}" is already on this case. The FIR API will treat this as a new upload. Continue anyway?`
+      );
+      if (!proceed) {
+        e.target.value = "";
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -202,6 +251,7 @@ export default function AddFilesPage() {
       if (res.ok) {
         const result = await res.json();
         void logActivity("Added interview notes");
+        void recordFirActivity(caseData?.ai_case_id, "NOTES_ADDED");
         setNotesText("");
         if (result.job_id) {
           setJobId(result.job_id);
@@ -284,6 +334,33 @@ export default function AddFilesPage() {
           ) : (
             <IngestionPipeline status={jobStatus} />
           )}
+        </div>
+      )}
+
+      {(caseData.sources?.length || 0) > 0 && (
+        <div className="mt-8">
+          <div className="mb-3 text-[13px] text-neutral-400">Uploaded files</div>
+          <div className="space-y-2">
+            {caseData.sources?.map((source, index) => (
+              <div
+                key={`${source.title}-${index}`}
+                className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <div className="text-[11px] text-orange-300">{humanize(source.type)}</div>
+                  <div className="mt-0.5 truncate text-[13px] text-white">{source.title}</div>
+                </div>
+                <button
+                  type="button"
+                  disabled={deletingSource !== null}
+                  onClick={() => void handleDeleteSource(index, source.title)}
+                  className="shrink-0 text-[12px] text-neutral-500 hover:text-red-400 disabled:opacity-50"
+                >
+                  {deletingSource === index ? "Removing…" : "Delete"}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

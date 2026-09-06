@@ -64,10 +64,11 @@ export default function CaseSidebar() {
     };
   }, [caseCode]);
 
-  const caseHome = `/cases/${caseCode}`;
-  const addFilesHref = `${caseHome}/add`;
+  const isAdminCase = pathname.startsWith("/admin/cases/");
+  const caseHome = isAdminCase ? `/admin/cases/${caseCode}` : `/cases/${caseCode}`;
+  const addFilesHref = `/cases/${caseCode}/add`;
   const onCaseHome = pathname === caseHome;
-  const onAddFiles = pathname === addFilesHref;
+  const onAddFiles = !isAdminCase && pathname === addFilesHref;
   const activeTab = searchParams.get("tab") || "sources";
 
   function goToTab(tabId: string) {
@@ -82,7 +83,7 @@ export default function CaseSidebar() {
       onMouseLeave={() => setOpen(false)}
     >
       <div
-        className={`h-full w-[260px] overflow-hidden border-r border-white/10 bg-[#050505]/95 backdrop-blur-md transition-transform duration-300 ease-out ${
+        className={`h-full w-[260px] overflow-hidden border-r border-white/10 bg-[#0a0a0a]/55 shadow-[8px_0_32px_rgba(0,0,0,0.35)] backdrop-blur-2xl transition-transform duration-300 ease-out ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -115,27 +116,29 @@ export default function CaseSidebar() {
                   onClick={() => goToTab(item.id)}
                   className={`whitespace-nowrap rounded-lg border px-3 py-2.5 text-left text-[13px] transition-colors ${
                     active
-                      ? "border-red-500/40 bg-red-500/10 text-red-200"
-                      : "border-transparent text-neutral-400 hover:border-white/10 hover:text-neutral-200"
+                      ? "border-red-500/40 bg-red-500/15 text-red-200"
+                      : "border-transparent bg-transparent text-neutral-400 hover:border-white/10 hover:bg-white/5 hover:text-neutral-200"
                   }`}
                 >
                   {item.label}
                 </button>
               );
             })}
-            <button
-              onClick={() => router.push(addFilesHref)}
-              className={`mt-3 whitespace-nowrap rounded-lg border px-3 py-2.5 text-left text-[13px] transition-colors ${
-                onAddFiles
-                  ? "border-orange-500/40 bg-orange-500/10 text-orange-200"
-                  : "border-transparent text-neutral-400 hover:border-white/10 hover:text-neutral-200"
-              }`}
-            >
-              Add files
-            </button>
+            {!isAdminCase && (
+              <button
+                onClick={() => router.push(addFilesHref)}
+                className={`mt-3 whitespace-nowrap rounded-lg border px-3 py-2.5 text-left text-[13px] transition-colors ${
+                  onAddFiles
+                    ? "border-orange-500/40 bg-orange-500/15 text-orange-200"
+                    : "border-transparent bg-transparent text-neutral-400 hover:border-white/10 hover:bg-white/5 hover:text-neutral-200"
+                }`}
+              >
+                Add files
+              </button>
+            )}
           </nav>
 
-          <div className="mt-6 space-y-4 border-t border-white/10 pt-6">
+          <div className="mt-6 space-y-4 border-t border-white/10 pb-2 pt-6">
             <div>
               <div className="text-[12px] text-neutral-500">Investigator</div>
               <div className="mt-1 text-[13px] leading-5 text-white">

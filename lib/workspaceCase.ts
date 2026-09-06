@@ -1,3 +1,5 @@
+import { preferExtractedList } from "@/lib/extractedCase";
+
 export interface FirDocument {
   document_id?: string;
   id?: string;
@@ -7,6 +9,23 @@ export interface FirDocument {
   content_type?: string;
   status?: string;
   created_at?: string;
+}
+
+export function leftoverFirDocuments(
+  sources: { title?: string; content?: string }[] = [],
+  documents: FirDocument[] = []
+) {
+  return documents.filter((doc) => {
+    const name = (doc.filename || doc.file_name || doc.title || "").trim().toLowerCase();
+    const id = doc.document_id || doc.id || "";
+    const genericName = !name || name === "uploaded document";
+    if (genericName && sources.length > 0) return false;
+    return !sources.some((source) => {
+      if (name && (source.title || "").trim().toLowerCase() === name) return true;
+      if (id && String(source.content || "").includes(id)) return true;
+      return false;
+    });
+  });
 }
 
 export interface FirIngestionJob {
@@ -162,6 +181,7 @@ export function jobStatusLabel(status?: string) {
 export interface WorkspaceCase {
   case_code: string;
   title: string;
+  status?: string;
   ai_case_id?: string;
   ai_extracted_data?: Record<string, unknown> | null;
   documents?: FirDocument[];
@@ -203,16 +223,27 @@ export async function loadWorkspaceCase(caseCode: string): Promise<WorkspaceCase
     if (!live.success || !live.case) return found;
 
     const ai = live.case;
+    const cached = found.ai_extracted_data || {};
     found.ai_extracted_data = {
-      ...(found.ai_extracted_data || {}),
-      persons: ai.persons ?? found.ai_extracted_data?.persons,
-      unknown_identities: ai.unknown_identities ?? found.ai_extracted_data?.unknown_identities,
-      incidents: ai.incidents ?? found.ai_extracted_data?.incidents,
-      relationships: ai.relationships ?? found.ai_extracted_data?.relationships,
-      entities: ai.entities ?? found.ai_extracted_data?.entities,
+      ...cached,
+      persons: preferExtractedList(ai.persons, cached.persons),
+      unknown_identities: preferExtractedList(ai.unknown_identities, cached.unknown_identities),
+      incidents: preferExtractedList(ai.incidents, cached.incidents),
+      relationships: preferExtractedList(ai.relationships, cached.relationships),
+      entities: preferExtractedList(ai.entities, cached.entities),
     };
-    found.documents = ai.documents || [];
-    found.ingestion_jobs = ai.ingestion_jobs || [];
+    found.documents = preferExtractedList(ai.documents, found.documents);
+    found.ingestion_jobs = preferExtractedList(ai.ingestion_jobs, found.ingestion_jobs);
+
+    const liveStatus = String(ai.status || "").toUpperCase();
+    if (liveStatus === "CLOSED" && found.status !== "CLOSED") {
+      found.status = "CLOSED";
+      void fetch(`/api/cases/${caseCode}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "CLOSED" }),
+      });
+    }
   } catch (error) {
     console.error("Failed to load live FIR case:", error);
   }

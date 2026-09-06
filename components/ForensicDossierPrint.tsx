@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { incidentWhen, relationEndKey, resolveEntityLabel } from "@/lib/extractedCase";
 
 interface PersonProfile {
   identity?: { name?: string; aliases?: string[] };
@@ -25,6 +26,7 @@ interface UnknownIdentityRecord {
 }
 
 interface IncidentRecord {
+  timestamp?: string | null;
   title?: string;
   summary?: string;
   description?: string;
@@ -80,11 +82,9 @@ export default function ForensicDossierPrint({
 }: ForensicDossierPrintProps) {
   if (!caseData) return null;
 
-  const getEntityName = (id: string) => {
-    const found = persons.find(
-      (item) => (item.person?.person_id || item.person_id) === id
-    );
-    return found?.person?.identity?.name || found?.name || id;
+  const getEntityName = (relation: RelationRecord, side: "source" | "target") => {
+    const fallback = side === "source" ? "Node A" : "Node B";
+    return resolveEntityLabel(relationEndKey(relation, side) || fallback, persons);
   };
 
   // Coordinates for the SVG Network Map in Print
@@ -205,7 +205,7 @@ export default function ForensicDossierPrint({
             {incidents.map((inc, idx) => (
               <div key={idx} className="border-l-2 border-black pl-3 text-xs">
                 <div className="font-bold uppercase text-[11px]">
-                  {inc.time?.start ? inc.time.start : `Event ${idx + 1}`} — {inc.title || "Incident"}
+                  {incidentWhen(inc, `Event ${idx + 1}`)} — {inc.title || "Incident"}
                 </div>
                 <p className="text-neutral-800 mt-0.5">{inc.description || inc.summary}</p>
                 {inc.key_points && inc.key_points.length > 0 && (
@@ -228,8 +228,8 @@ export default function ForensicDossierPrint({
         </h2>
         <div className="space-y-2">
           {relations.map((rel, idx) => {
-            const fName = getEntityName(rel.from?.id || rel.source || "Node A");
-            const tName = getEntityName(rel.to?.id || rel.target || "Node B");
+            const fName = getEntityName(rel, "source");
+            const tName = getEntityName(rel, "target");
 
             return (
               <div key={idx} className="border border-neutral-300 p-2 text-xs">

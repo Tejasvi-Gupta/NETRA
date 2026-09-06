@@ -32,6 +32,14 @@ export async function PATCH(
     const { caseCode } = await params;
     const body = await request.json();
 
+    if (body.status) {
+      const nextStatus = String(body.status).toUpperCase();
+      if (!["ACTIVE", "UNDER_REVIEW", "CLOSED"].includes(nextStatus)) {
+        return NextResponse.json({ success: false, error: "Invalid case status" }, { status: 400 });
+      }
+      body.status = nextStatus;
+    }
+
     const updatedCase = await Case.findOneAndUpdate(
       { case_code: caseCode },
       { 

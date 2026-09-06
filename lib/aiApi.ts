@@ -270,6 +270,108 @@ export async function sendCaseChatMessage(caseId: string, message: string) {
   });
 }
 
+export type ChatTurn = { role: "user" | "ai"; content: string };
+
+function chatText(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function chatRole(value: unknown): "user" | "ai" {
+  const raw = String(value || "").toLowerCase();
+  if (/(assistant|ai|model|bot|copilot)/.test(raw)) return "ai";
+  return "user";
+}
+
+export function normalizeChatHistory(payload: unknown): ChatTurn[] {
+  if (!payload) return [];
+  if (typeof payload === "string" && payload.trim()) {
+    return [{ role: "ai", content: payload.trim() }];
+  }
+
+  if (Array.isArray(payload)) {
+    const turns: ChatTurn[] = [];
+    for (const item of payload) {
+      if (typeof item === "string" && item.trim()) {
+        turns.push({ role: "user", content: item.trim() });
+        continue;
+      }
+      if (!item || typeof item !== "object") continue;
+      const rec = item as Record<string, unknown>;
+      const question = chatText(rec.question, rec.user, rec.prompt, rec.query);
+      const answer = chatText(rec.answer, rec.reply, rec.response);
+      if (question || answer) {
+        if (question) turns.push({ role: "user", content: question });
+        if (answer) turns.push({ role: "ai", content: answer });
+        continue;
+      }
+      const content = chatText(rec.content, rec.message, rec.text);
+      if (content) {
+        turns.push({
+          role: chatRole(rec.role || rec.sender || rec.author || rec.type),
+          content,
+        });
+      }
+    }
+    return turns;
+  }
+
+  if (typeof payload === "object") {
+    const rec = payload as Record<string, unknown>;
+    const nested =
+      rec.messages ?? rec.history ?? rec.turns ?? rec.items ?? rec.chat ?? rec.conversations ?? rec.data;
+    if (nested && nested !== payload) return normalizeChatHistory(nested);
+  }
+
+  return [];
+}
+
 export async function getCaseChatHistory(caseId: string) {
   return firFetch<unknown>(`/cases/${caseId}/chat/history`);
+}
+
+export type TimelineEvent = {
+  timestamp?: string | null;
+  title?: string;
+  description?: string;
+  key_points?: string[];
+  entities_involved?: string[];
+};
+
+export async function getCaseTimeline(caseId: string) {
+  return firFetch<TimelineEvent[]>(`/cases/${caseId}/timeline`);
+}
+
+export async function createCaseRelationship(
+  caseId: string,
+  body: { source: string; target: string; type: string; evidence: string }
+) {
+  return firFetch<{
+    relationship_id?: string;
+    case_id?: string;
+    source?: string;
+    target?: string;
+    type?: string;
+    evidence?: string;
+  }>(`/cases/${caseId}/relationships`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function recordCaseActivity(caseId: string, action: string, actor: string) {
+  return firFetch<{
+    activity_id?: string;
+    case_id?: string;
+    action?: string;
+    actor?: string;
+    timestamp?: string;
+  }>(`/cases/${caseId}/activity`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, actor }),
+  });
 }
