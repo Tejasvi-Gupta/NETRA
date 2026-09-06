@@ -232,12 +232,11 @@ export default function AdminDashboardPage() {
           SITUATION SUMMARY
         </div>
 
-        <div className="mb-12 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-12 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[
             { label: "Active Cases", value: summary.activeCount },
             { label: "High-Risk Cases", value: summary.highRiskCount },
             { label: "Cases Resolved", value: summary.resolvedCount },
-            { label: "Detection Accuracy", value: "98.4%" },
           ].map((s) => (
             <div
               key={s.label}
