@@ -7,9 +7,13 @@ import { listAICases, resolveAICaseId } from "@/lib/aiApi";
 export async function GET() {
   try {
     await connectDB();
-    const cases = await Case.find({}).sort({ updatedAt: -1 }).lean();
+    const cases = await Case.find({})
+      .select("case_code title case_type priority status assigned_investigator last_signal_at ai_case_id")
+      .sort({ updatedAt: -1 })
+      .lean();
 
-    const fir = await listAICases();
+    // Dashboard should not wait on a cold FIR/Render boot. Merge live fields only if FIR answers quickly.
+    const fir = await listAICases({ timeoutMs: 1200 });
     const firByNumber = new Map<string, { case_id?: string; title?: string; status?: string; priority?: string }>();
     if (fir.ok) {
       for (const item of fir.data || []) {

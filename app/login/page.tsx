@@ -36,9 +36,9 @@ export default function LoginPage() {
       "netra_display_name",
       roleKey === "admin" ? "Administrator" : "Field Investigator"
     );
-    setTimeout(() => {
-      router.push(roleKey === "admin" ? "/admin/dashboard" : "/investigator/dashboard");
-    }, 650);
+    void fetch("/api/cases");
+    if (roleKey === "admin") void fetch("/api/activities");
+    router.push(roleKey === "admin" ? "/admin/dashboard" : "/investigator/dashboard");
   }
 
   return (

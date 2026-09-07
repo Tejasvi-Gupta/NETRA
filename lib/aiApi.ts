@@ -147,8 +147,18 @@ export async function checkServerHealth(): Promise<boolean> {
   }
 }
 
-export async function listAICases() {
-  return firFetch<AICaseListItem[]>("/cases");
+export async function listAICases(options?: { timeoutMs?: number }) {
+  if (!options?.timeoutMs) {
+    return firFetch<AICaseListItem[]>("/cases");
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+  try {
+    return await firFetch<AICaseListItem[]>("/cases", { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function findAICaseByNumber(caseNumber: string) {
