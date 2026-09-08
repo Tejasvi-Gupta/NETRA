@@ -919,9 +919,14 @@ function CaseWorkspace() {
         </div>
       )}
 
-      {activeTab === "graph" && (
-        <CaseNetworkMap nodes={graphNodes} edges={graphEdges} accent="orange" />
-      )}
+     {activeTab === "graph" && (
+       <CaseNetworkMap
+         caseId={caseData?.ai_case_id || analysisResult?.case_id}
+         nodes={graphNodes}
+         edges={graphEdges}
+         accent="orange"
+       />
+     )}
 
       {isTimelineOpen && (
         <div
