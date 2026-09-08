@@ -816,6 +816,7 @@ function AdminCaseView() {
 
       {activeTab === "graph" && (
         <CaseNetworkMap
+          caseId={caseData?.ai_case_id || analysisResult?.case_id}
           nodes={graphNodes}
           edges={graphEdges}
           accent="red"
