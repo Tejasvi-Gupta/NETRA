@@ -19,7 +19,7 @@ export interface NetworkEdge {
 }
 
 interface Props {
-  caseId?: string; // 👈 1. ADDED caseId prop
+  caseId?: string;
   nodes: NetworkNode[];
   edges: NetworkEdge[];
   loading?: boolean;
@@ -42,7 +42,7 @@ export default function CaseNetworkMap({
   const text = isOrange ? "text-orange-300" : "text-red-300";
   const bg = isOrange ? "bg-orange-500/10" : "bg-red-500/10";
 
-  // 👈 2. Compute dynamic URL with ?caseId=...
+  // Computes https://netra-graph.vercel.app/?caseId=...
   const graphUrl = useMemo(() => {
     if (!caseId) return BASE_GRAPH_URL;
     return `${BASE_GRAPH_URL}?caseId=${encodeURIComponent(caseId)}`;
@@ -66,7 +66,7 @@ export default function CaseNetworkMap({
             {nodes.length} people · {edges.length} links
           </span>
 
-          {/* Fullscreen external launcher button */}
+          {/* External launcher button */}
           <a
             href={graphUrl}
             target="_blank"
@@ -78,7 +78,7 @@ export default function CaseNetworkMap({
         </div>
       </div>
 
-      {/* 👈 3. Live Embedded Iframe */}
+      {/* Live Embedded Iframe */}
       <div className="relative w-full h-[650px] bg-black">
         {caseId ? (
           <iframe
@@ -88,8 +88,11 @@ export default function CaseNetworkMap({
             allow="fullscreen"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-zinc-500 text-sm">
-            No Case ID provided to render network map.
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-zinc-500 text-sm">
+            <p className="font-semibold text-zinc-300">Case Not Linked to Graph Engine</p>
+            <p className="max-w-md text-xs text-zinc-400">
+              This case has not been linked to the FIR Intelligence API yet. Click <span className="font-medium text-amber-400">"Link to FIR API"</span> in the case header to generate the intelligence graph.
+            </p>
           </div>
         )}
       </div>
