@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { hardcodedEvidenceUrl, MONSOON_LEDGER_FILENAME } from "@/lib/hardcodedEvidence";
 
 export interface PreviewSource {
   type: string;
@@ -66,18 +67,31 @@ function isTextSource(source: PreviewSource) {
 
 export default function SourcePreviewModal({
   source,
+  caseId,
+  caseCode,
   onClose,
 }: {
   source: PreviewSource;
+  caseId?: string | null;
+  caseCode?: string | null;
   onClose: () => void;
 }) {
-  const title = cleanFileName(source.title);
-  const ext = fileExtension(source.title);
+  const hardcodedUrl = hardcodedEvidenceUrl({
+    caseId,
+    caseCode,
+    title: source.title,
+  });
+  const title = cleanFileName(hardcodedUrl ? MONSOON_LEDGER_FILENAME : source.title);
+  const ext = fileExtension(title);
+  const embedUrl =
+    hardcodedUrl ||
+    (source.content.startsWith("data:application/pdf") ? source.content : null) ||
+    (source.content.startsWith("/") && source.content.toLowerCase().endsWith(".pdf") ? source.content : null);
   const size = estimateDataUrlSize(source.content);
   const addedAt = formatAddedAt(source.uploaded_at);
-  const canDownload = source.content.startsWith("data:");
+  const canDownload = Boolean(embedUrl);
   const image = isImageSource(source);
-  const pdf = isPdfSource(source);
+  const pdf = isPdfSource(source) || Boolean(embedUrl);
   const text = isTextSource(source);
 
   useEffect(() => {
@@ -139,8 +153,8 @@ export default function SourcePreviewModal({
             </div>
           )}
 
-          {!image && pdf && canDownload && (
-            <iframe title={title} src={source.content} className="h-[58vh] w-full border-0 bg-white" />
+          {!image && pdf && embedUrl && (
+            <iframe title={title} src={embedUrl} className="h-[58vh] w-full border-0 bg-white" />
           )}
 
           {!image && !pdf && text && (
@@ -185,9 +199,9 @@ export default function SourcePreviewModal({
             >
               Close
             </button>
-            {canDownload && (
+            {canDownload && embedUrl && (
               <a
-                href={source.content}
+                href={embedUrl}
                 download={title}
                 className="inline-flex h-9 items-center rounded-lg border border-orange-600/50 bg-orange-950/40 px-3 text-[13px] font-medium text-orange-200 hover:border-orange-400/60 hover:text-white"
               >

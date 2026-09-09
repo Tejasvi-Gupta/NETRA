@@ -951,7 +951,12 @@ function CaseWorkspace() {
       )}
 
       {previewSource && (
-        <SourcePreviewModal source={previewSource} onClose={() => setPreviewSource(null)} />
+        <SourcePreviewModal
+          source={previewSource}
+          caseId={caseData.ai_case_id}
+          caseCode={caseData.case_code}
+          onClose={() => setPreviewSource(null)}
+        />
       )}
       </div>
 
