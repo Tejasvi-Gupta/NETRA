@@ -81,7 +81,7 @@ export default function SourcePreviewModal({
     caseCode,
     title: source.title,
   });
-  const title = cleanFileName(hardcodedUrl ? MONSOON_LEDGER_FILENAME : source.title);
+  const title = cleanFileName(source.title || MONSOON_LEDGER_FILENAME);
   const ext = fileExtension(title);
   const embedUrl =
     hardcodedUrl ||
